@@ -1,0 +1,584 @@
+---
+# PLAY 1: Domain Controller / AD / DNS role install
+- name: Install DC, AD, DNS on Win Serv 2019
+  hosts: windows-host-1
+  vars:
+    safe_mode_password: "Followorders07"
+    domain_name: clone.wars
+    netbios_name: clone
+
+  tasks:
+
+    - name: Set Hostname
+      ansible.windows.win_hostname:
+        name: Coruscant
+      register: hostname_change
+
+    - name: Install AD DS
+      ansible.windows.win_feature:
+        name: AD-Domain-Services
+        state: present
+        include_management_tools: yes
+
+    - name: Install DNS Server
+      ansible.windows.win_feature:
+        name: DNS
+        state: present
+        include_management_tools: yes
+
+    - name: Reboot After hostname change
+      ansible.windows.win_reboot:
+        msg: "Rebooting after altering hostname"
+        pre_reboot_delay: 15
+      when: hostname_change.reboot_required
+
+    - name: Create AD Forest and promote server to DC
+      microsoft.ad.domain:
+        dns_domain_name: "{{ domain_name }}"
+        domain_netbios_name: "{{ netbios_name }}"
+        safe_mode_password: "{{ safe_mode_password }}"
+      register: domain_setup
+
+    - name: Reboot After DC Promotion
+      ansible.windows.win_reboot:
+        msg: "Rebooting after promoting the DC"
+        pre_reboot_delay: 15
+      when: domain_setup.reboot_required
+
+
+# PLAY 2: Configure Active Directory objects + DNS records
+- name: Configure Active Directory and DNS
+  hosts: windows-host-1
+  vars:
+    domain_name: clone.wars
+    # Single source of truth for the shared account password used below and
+    # by the "CT Tup" account created for SMB access.
+    shared_account_password: "Followorders07"
+
+  tasks:
+
+  - name: Check if Captain Rex exists from other run
+    microsoft.ad.object_info:
+      filter: "SamAccountName -eq 'captainrex'"
+    register: ad_user_check
+
+  - name: Create Domain User
+    microsoft.ad.user:
+      identity: "Captain Rex"
+      sam_account_name: captainrex
+      firstname: Captain
+      surname: Rex
+      upn: "captainrex@{{ domain_name }}"
+      password: "{{ shared_account_password }}"
+      state: present
+      path: "CN=Users,DC=clone,DC=wars"
+      password_never_expires: true
+      enabled: true
+    when: ad_user_check.objects | length == 0
+
+  # NEW: domain account for SMB access, replacing the local "CT TUP" Windows
+  # user that the original SMB playbook created directly on the file server.
+  - name: Check if CT Tup exists from other run
+    microsoft.ad.object_info:
+      filter: "SamAccountName -eq 'cttup'"
+    register: ad_cttup_check
+
+  - name: Create Domain User for SMB access
+    microsoft.ad.user:
+      identity: "CT Tup"
+      sam_account_name: cttup
+      firstname: CT
+      surname: Tup
+      upn: "cttup@{{ domain_name }}"
+      password: "{{ shared_account_password }}"
+      state: present
+      path: "CN=Users,DC=clone,DC=wars"
+      password_never_expires: true
+      enabled: true
+    when: ad_cttup_check.objects | length == 0
+
+  - name: Creating Domain Group
+    microsoft.ad.group:
+      name: "Clone Admins"
+      scope: global
+      state: present
+
+  ### need to make all the other accounts, this is ez to do!!!
+
+  - name: Add Captain Rex to Clone Admins
+    microsoft.ad.group:
+      identity: "Clone Admins"
+      members:
+        add:
+          - captainrex #add all other admins that we specified in #themeing
+      state: present
+
+  - name: Nest Clone Admins Inside Domain Admins
+    microsoft.ad.group:
+      identity: Domain Admins
+      members:
+        add:
+          - Clone Admins
+      state: present
+
+  ### need to add rest of the A records for the other hosts, this is ez to do!!!
+
+  - name: Create A Records
+    ansible.windows.win_dns_record:
+      name: box1
+      type: A
+      value: "192.168.1.51"
+      zone: "{{ domain_name }}"
+      state: present
+
+
+
+# PLAY 3: GPO / login notification rollout
+- name: Notification Creation
+  hosts: windows-host-1
+  vars:
+    republic_path: 'C:\Program Files\Galactic_Republic'
+
+  tasks:
+  - name: Creating Galactic_Republic Directory
+    ansible.windows.win_file:
+      path: "{{ republic_path }}"
+      state: directory
+
+  - name: Copy Notif PS1
+    ansible.windows.win_copy:
+      src: dc/notifications.ps1
+      dest: "{{ republic_path }}"
+
+  - name: Copy PNG
+    ansible.windows.win_copy:
+      src: dc/logo.png
+      dest: "{{ republic_path }}"
+
+  - name: Copy GPO PS1
+    ansible.windows.win_copy:
+      src: dc/gpo_create.ps1
+      dest: "{{ republic_path }}"
+
+  - name: Set PowerShell Execution Policy to allow all
+    ansible.windows.win_regedit:
+      path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell
+      name: EnableScripts
+      data: 1
+      type: dword
+      state: present
+
+  - name: Allow all PowerShell scripts
+    ansible.windows.win_regedit:
+      path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell
+      name: ExecutionPolicy
+      data: Unrestricted
+      type: string
+      state: present
+
+  - name: Update gpo policy to easily run gpo ps1
+    ansible.windows.win_command:
+      cmd: gpupdate.exe /force
+
+  - name: Run the GPO PS1
+    ansible.windows.win_command:
+      cmd: powershell.exe -NoProfile -File "C:\Program Files\Galactic_Republic\gpo_create.ps1"
+
+
+# PLAY 4: Certification Authority
+- name: Deploy Competition CA
+  hosts: windows-host-3
+  vars:
+    ca_common_name: "CDT-Root-CA"
+    ca_key_length: 2048
+    ca_hash_algorithm: "SHA256"
+    ca_validity_years: 5
+    domain_name: clone.wars
+    domain_admin_user: "captainrex@clone.wars"
+    domain_admin_password: "Followorders07"   # same as Captain Rex, see Play 2
+    iis_hostname: "Kamino"
+    pfx_export_password: "TempExportPass1!"
+
+  tasks:
+    # ---- Join domain before anything else on this host ----
+    - name: Join the domain
+      microsoft.ad.membership:
+        dns_domain_name: "{{ domain_name }}"
+        domain_admin_user: "{{ domain_admin_user }}"
+        domain_admin_password: "{{ domain_admin_password }}"
+        state: domain
+        reboot: true
+
+    # ---- Original CA build-out, unchanged ----
+    - name: Install AD CS CA role
+      ansible.windows.win_feature:
+        name: ADCS-Cert-Authority
+        state: present
+        include_management_tools: true
+      register: adcs_install
+
+    - name: Configure Enterprise Root CA
+      ansible.windows.win_powershell:
+        script: |
+          $caConfig = Get-ItemProperty `
+            -Path "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration" `
+            -Name "Active" `
+            -ErrorAction SilentlyContinue
+
+          if ($caConfig.Active) {
+              Write-Output "CA is already configured as $($caConfig.Active)"
+              $Ansible.Changed = $false
+          }
+          else {
+              Install-AdcsCertificationAuthority `
+                -CAType EnterpriseRootCA `
+                -CACommonName "{{ ca_common_name }}" `
+                -CryptoProviderName "RSA#Microsoft Software Key Storage Provider" `
+                -KeyLength {{ ca_key_length }} `
+                -HashAlgorithmName "{{ ca_hash_algorithm }}" `
+                -ValidityPeriod Years `
+                -ValidityPeriodUnits {{ ca_validity_years }} `
+                -Force
+
+              $Ansible.Changed = $true
+          }
+
+    - name: Enable Certification Services auditing
+      ansible.windows.win_audit_policy_system:
+        subcategory: Certification Services
+        audit_type:
+          - success
+          - failure
+
+    - name: Enable full CA audit logging
+      ansible.windows.win_powershell:
+        script: |
+          $auditPath = "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration\{{ ca_common_name }}"
+          $currentAudit = (Get-ItemProperty `
+            -Path $auditPath `
+            -Name "AuditFilter" `
+            -ErrorAction SilentlyContinue).AuditFilter
+
+          if ($currentAudit -eq 127) {
+              Write-Output "Full CA auditing is already enabled"
+              $Ansible.Changed = $false
+          }
+          else {
+              certutil -setreg CA\AuditFilter 127 | Out-Null
+              Restart-Service CertSvc
+
+              Write-Output "Full CA auditing enabled"
+              $Ansible.Changed = $true
+          }
+
+    # ---- NEW: issue and stage a certificate for the IIS host ----
+    - name: Ensure a staging directory exists for exported certs
+      ansible.windows.win_file:
+        path: C:\Temp
+        state: directory
+
+    - name: Generate a certificate for the IIS host, signed by the new Root CA
+      ansible.windows.win_powershell:
+        script: |
+          $caCert = Get-ChildItem Cert:\LocalMachine\My |
+            Where-Object { $_.Subject -match "{{ ca_common_name }}" } |
+            Select-Object -First 1
+
+          $iisFqdn = "{{ iis_hostname }}.{{ domain_name }}"
+          $existing = Get-ChildItem Cert:\LocalMachine\My |
+            Where-Object { $_.Subject -eq "CN=$iisFqdn" }
+
+          if ($existing) {
+              Write-Output "Certificate for $iisFqdn already exists"
+              $Ansible.Changed = $false
+          }
+          else {
+              New-SelfSignedCertificate `
+                -DnsName $iisFqdn `
+                -Signer $caCert `
+                -CertStoreLocation Cert:\LocalMachine\My `
+                -KeyExportPolicy Exportable `
+                -NotAfter (Get-Date).AddYears({{ ca_validity_years }}) | Out-Null
+
+              $Ansible.Changed = $true
+          }
+
+    - name: Export the IIS certificate to a PFX file
+      ansible.windows.win_powershell:
+        script: |
+          $iisFqdn = "{{ iis_hostname }}.{{ domain_name }}"
+          $cert = Get-ChildItem Cert:\LocalMachine\My |
+            Where-Object { $_.Subject -eq "CN=$iisFqdn" } |
+            Select-Object -First 1
+
+          $securePwd = ConvertTo-SecureString -String "{{ pfx_export_password }}" -Force -AsPlainText
+          Export-PfxCertificate `
+            -Cert $cert `
+            -FilePath "C:\Temp\iis_cert.pfx" `
+            -Password $securePwd | Out-Null
+
+    - name: Fetch the PFX certificate back to the control node
+      ansible.builtin.fetch:
+        src: "C:\\Temp\\iis_cert.pfx"
+        dest: "{{ playbook_dir }}/certs/iis_cert.pfx"
+        flat: yes
+
+
+# PLAY 5: IIS Web Server
+- name: Install and Configure IIS on Windows Server
+  hosts: windows-host-2
+  vars:
+    domain_name: clone.wars
+    domain_admin_user: "captainrex@clone.wars"
+    domain_admin_password: "Followorders07"   # same as Captain Rex, see Play 2
+    pfx_export_password: "TempExportPass1!"   # must match the CA play
+
+  tasks:
+
+    - name: Set hostname
+      ansible.windows.win_hostname:
+        name: "Naboo"
+      register: hostname_change
+
+    - name: Create cursor directory
+      ansible.windows.win_file:
+        path: C:\Windows\Cursors
+        state: directory
+
+    - name: Copy cursor files
+      ansible.windows.win_copy:
+        src: iis/imgs/customcursor.cur
+        dest: C:\Windows\Cursors
+
+    - name: Set cursor theme
+      ansible.windows.win_regedit:
+        path: 'HKCU:\.DEFAULT\Control Panel\Cursors'
+        name: 'Arrow'
+        data: 'C:\Windows\Cursors\customcursor.cur'
+        type: string
+
+    - name: Set cursor scheme to user scheme in default
+      ansible.windows.win_regedit:
+        path: 'HKCU:\.DEFAULT\Control Panel\Cursors'
+        name: 'Scheme Source'
+        data: 1
+        type: dword
+
+    - name: Apply cursor theme
+      ansible.windows.win_powershell:
+        script: "{{ lookup('file', 'iis/cursorscript.ps1') }}"
+
+    - name: Reboot After hostname and cursor change
+      ansible.windows.win_reboot:
+        msg: "Rebooting after altering hostname and cursor"
+        pre_reboot_delay: 30
+      when: hostname_change.reboot_required
+
+    # ---- Join domain before installing IIS itself ----
+    - name: Join the domain
+      microsoft.ad.membership:
+        dns_domain_name: "{{ domain_name }}"
+        domain_admin_user: "{{ domain_admin_user }}"
+        domain_admin_password: "{{ domain_admin_password }}"
+        state: domain
+        reboot: true
+
+    - name: Install IIS
+      ansible.windows.win_feature:
+        name: Web-Server
+        state: present
+        include_sub_features: true
+        include_management_tools: yes
+      register: iis_install
+
+    - name: resolving port conflict issue(deleting default web site)
+      microsoft.iis.website:
+        name: "Default Web Site"
+        state: absent
+
+    - name: Reboot server if required
+      ansible.windows.win_reboot:
+      when: iis_install.reboot_required
+
+    - name: Ensure the website is running
+      ansible.windows.win_service:
+        name: w3svc
+        state: started
+
+    - name: make a directory for webpage
+      ansible.windows.win_file:
+        path: C:\inetpub\wwwroot\testerpage
+        state: directory
+
+    - name: copy index to directory
+      ansible.windows.win_copy:
+        src: iis/pages/index.html
+        dest: C:\inetpub\wwwroot\testerpage\index.html
+
+    - name: remove previous instance of tester page if it exists
+      microsoft.iis.website:
+        name: "Tester Page"
+        state: absent
+
+    # picking up the CA-issued cert instead of a hardcoded thumbprint ----
+    - name: Ensure a staging directory exists for the certificate
+      ansible.windows.win_file:
+        path: C:\Temp
+        state: directory
+
+    - name: Copy the CA-issued certificate from the control node
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/certs/iis_cert.pfx"
+        dest: C:\Temp\iis_cert.pfx
+
+    - name: Import the certificate for IIS to use
+      ansible.windows.win_certificate_store:
+        path: C:\Temp\iis_cert.pfx
+        password: "{{ pfx_export_password }}"
+        store_location: LocalMachine
+        key_storage: machine   # required so the IIS APPPOOL identity can read the private key
+        state: present
+      become: yes
+      become_method: runas
+      become_user: SYSTEM
+      register: iis_cert_import
+
+    - name: add a webpage for iis
+      microsoft.iis.website:
+        name: "Tester Page"
+        physical_path: C:\inetpub\wwwroot\testerpage
+        state: started
+
+        bindings:
+          add:
+            - protocol: http
+              ip: "*"
+              port: 80
+            - protocol: https
+              ip: "*"
+              port: 443
+              certificate_hash: "{{ iis_cert_import.thumbprints[0] }}"
+
+
+# PLAY 6: SMB File Share
+- name: Install SMB service on Win Serv 2019
+  hosts: windows-host-4
+  vars:
+    domain_name: clone.wars
+    netbios_name: clone
+    domain_admin_user: "captainrex@clone.wars"
+    domain_admin_password: "Followorders07"   # same as Captain Rex, see Play 2
+
+  tasks:
+    - name: Set hostname
+      ansible.windows.win_hostname:
+        name: "Felucia"
+      register: hostname_change
+
+    - name: Reboot after hostname change
+      ansible.windows.win_reboot:
+        msg: "Rebooting after altering hostname"
+        pre_reboot_delay: 30
+      when: hostname_change.reboot_required
+
+    # ---- Join domain before touching the file share ----
+    - name: Join the domain
+      microsoft.ad.membership:
+        dns_domain_name: "{{ domain_name }}"
+        domain_admin_user: "{{ domain_admin_user }}"
+        domain_admin_password: "{{ domain_admin_password }}"
+        state: domain
+        reboot: true
+
+    - name: Install file server feature
+      ansible.windows.win_feature:
+        name: FS-FileServer
+        state: present
+
+    - name: Create empty shared folder
+      ansible.windows.win_file:
+        path: C:\shared_storage
+        state: directory
+
+    # "CT Tup" is now the domain account created in the "Configure Active Directory and DNS" play, so there's no local win_user task here.
+
+    - name: Set permissions on shared folder
+      ansible.windows.win_acl:
+        path: C:\shared_storage
+        user: "{{ netbios_name }}\\cttup"
+        rights: Modify
+        type: allow
+        state: present
+
+    - name: Create SMB share
+      ansible.windows.win_share:
+        name: Mandalore_Storage
+        path: C:\shared_storage
+        full: "{{ netbios_name }}\\cttup"
+        state: present
+
+    - name: Copy default message into SMB share folder
+      ansible.windows.win_copy:
+        src: smb/message.txt
+        dest: C:\shared_storage\message.txt
+
+
+# PLAY 7: MSSQL Express
+- name: Deploy MSSQL Express on windows-host-5
+  hosts: windows-host-5
+  gather_facts: no
+  vars:
+    mssql_service: MSSQL$SQLEXPRESS
+    sql_port: 1433
+    domain_name: clone.wars
+    domain_admin_user: "captainrex@clone.wars"
+    domain_admin_password: "Followorders07"   # same as Captain Rex, see Play 2
+
+  tasks:
+    - name: Set hostname
+      ansible.windows.win_hostname:
+        name: "Alderaan"
+      register: hostname_change
+
+    - name: Reboot after hostname change
+      ansible.windows.win_reboot:
+        msg: "Rebooting after altering hostname"
+        pre_reboot_delay: 30
+      when: hostname_change.reboot_required
+      
+    # ---- Join domain before installing SQL Server ----
+    - name: Join the domain
+      microsoft.ad.membership:
+        dns_domain_name: "{{ domain_name }}"
+        domain_admin_user: "{{ domain_admin_user }}"
+        domain_admin_password: "{{ domain_admin_password }}"
+        state: domain
+        reboot: true
+
+    - name: Ensure Chocolatey is installed on the target, 1.x specifically
+      chocolatey.chocolatey.win_chocolatey:
+        name: chocolatey
+        version: '1.4.0'
+        state: present
+
+    - name: Install SQL Server Express via Chocolatey
+      chocolatey.chocolatey.win_chocolatey:
+        name: sql-server-express
+        state: present
+      register: sql_install
+
+    - name: Ensure SQL Server service is running and set to automatic
+      ansible.windows.win_service:
+        name: "{{ mssql_service }}"
+        start_mode: auto
+        state: started
+
+    - name: Open TCP port for SQL Server
+      community.windows.win_firewall_rule:
+        name: "MSSQL TCP {{ sql_port }}"
+        localport: "{{ sql_port }}"
+        protocol: tcp
+        direction: in
+        action: allow
+        state: present
+        enabled: yes
