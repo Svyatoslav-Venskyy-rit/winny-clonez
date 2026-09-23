@@ -184,20 +184,91 @@
     ansible.windows.win_command:
       cmd: powershell.exe -NoProfile -File "C:\Program Files\Galactic_Republic\gpo_create.ps1"
 
-# PLAY PREP: changing SID of all VMs
-- name: Generalize the CA VM before joining the domain
+# PLAY PREP: Fix host 3 only if its SID matches the domain SID
+- name: Check and repair the CA VM SID
   hosts: windows-host-3
   gather_facts: false
+  any_errors_fatal: true
+
+  vars:
+    read_machine_sid: |
+      $ErrorActionPreference = 'Stop'
+      $admin = Get-LocalUser | Where-Object { $_.SID.Value -match '-500$' }
+      if (-not $admin) {
+          throw 'Could not find the local built-in Administrator account.'
+      }
+      $admin.SID.AccountDomainSid.Value
 
   tasks:
-    - name: Run Sysprep and shut down
-      ansible.windows.win_command:
-        cmd: C:\Windows\System32\Sysprep\Sysprep.exe /generalize /oobe /rebot /quiet
-      become: true
-      become_method: runas
-      become_user: SYSTEM
-      async: 1800
-      poll: 0
+    - name: Read the domain SID from the DC
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = 'Stop'
+        Import-Module ActiveDirectory
+        (Get-ADDomain -Identity 'clone.wars').DomainSID.Value
+      delegate_to: windows-host-1
+      register: domain_sid
+      changed_when: false
+
+    - name: Read host 3 machine SID
+      ansible.windows.win_shell: "{{ read_machine_sid }}"
+      register: machine_sid
+      changed_when: false
+
+    - name: Show SID comparison
+      ansible.builtin.debug:
+        msg:
+          - "Domain SID: {{ domain_sid.stdout | trim }}"
+          - "Host 3 SID: {{ machine_sid.stdout | trim }}"
+          - "Sysprep needed: {{ (machine_sid.stdout | trim) == (domain_sid.stdout | trim) }}"
+
+    - name: Repair duplicate SID
+      when: (machine_sid.stdout | trim) == (domain_sid.stdout | trim)
+      block:
+        - name: Ensure this machine is not already domain joined
+          ansible.windows.win_shell: |
+            if ((Get-CimInstance Win32_ComputerSystem).PartOfDomain) {
+                throw 'Refusing to run Sysprep on a domain-joined machine.'
+            }
+          changed_when: false
+
+        - name: Run Sysprep and reboot
+          ansible.windows.win_command:
+            cmd: C:\Windows\System32\Sysprep\Sysprep.exe /generalize /oobe /reboot /quiet
+          become: true
+          become_method: runas
+          become_user: SYSTEM
+          async: 1800
+          poll: 0
+
+        - name: Wait for manual completion of Windows setup
+          ansible.builtin.pause:
+            prompt: >-
+              Wait for host 3 to reboot and complete Windows setup
+              in its console. Restore its inventory IP and WinRM if
+              needed. Only then press Enter to continue
+
+        - name: Clear the previous connection
+          ansible.builtin.meta: reset_connection
+
+        - name: Wait for Ansible connectivity
+          ansible.builtin.wait_for_connection:
+            timeout: 900
+            sleep: 10
+
+        - name: Read the machine SID after setup
+          ansible.windows.win_shell: "{{ read_machine_sid }}"
+          register: new_machine_sid
+          changed_when: false
+
+        - name: Verify the SID changed before continuing
+          ansible.builtin.assert:
+            that:
+              - (new_machine_sid.stdout | trim) != (machine_sid.stdout | trim)
+              - (new_machine_sid.stdout | trim) != (domain_sid.stdout | trim)
+            fail_msg: >-
+              The SID still matches. Stop and check the Sysprep logs
+              on host 3 before attempting the domain join.
+            success_msg: "Host 3 has a new SID. Continuing to the CA play."
 
 ### need to include the other 3 hosts with copy paste above play...
 
