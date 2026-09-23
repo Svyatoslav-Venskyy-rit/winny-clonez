@@ -184,6 +184,22 @@
     ansible.windows.win_command:
       cmd: powershell.exe -NoProfile -File "C:\Program Files\Galactic_Republic\gpo_create.ps1"
 
+# PLAY PREP: changing SID of all VMs
+- name: Generalize the CA VM before joining the domain
+  hosts: windows-host-3
+  gather_facts: false
+
+  tasks:
+    - name: Run Sysprep and shut down
+      ansible.windows.win_command:
+        cmd: C:\Windows\System32\Sysprep\Sysprep.exe /generalize /oobe /rebot /quiet
+      become: true
+      become_method: runas
+      become_user: SYSTEM
+      async: 1800
+      poll: 0
+
+### need to include the other 3 hosts with copy paste above play...
 
 # PLAY 4: Certification Authority
 - name: Deploy Competition CA
