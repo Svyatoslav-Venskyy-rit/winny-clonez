@@ -339,7 +339,12 @@
         src: "C:\\Temp\\iis_cert.pfx"
         dest: "{{ playbook_dir }}/certs/iis_cert.pfx"
         flat: yes
-
+    # time stamped version that wont be deleted/updated to be new
+    - name: Save a timestamped PFX copy on the control node
+      ansible.builtin.fetch:
+        src: 'C:\Temp\iis_cert.pfx'
+        dest: "{{ playbook_dir }}/certs/archive/iis_cert_{{ inventory_hostname }}_{{ now(utc=true, fmt='%Y-%m-%d_%H-%M-%S-%f') }}Z.pfx"
+        flat: true
 
 # PLAY 5: IIS Web Server
 - name: Install and Configure IIS on Windows Server
