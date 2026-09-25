@@ -477,6 +477,9 @@
       register: iis_cert_import
 
     - name: add a webpage for iis
+      become: true
+      become_method: runas
+      become_user: SYSTEM
       microsoft.iis.website:
         name: "Tester Page"
         physical_path: C:\inetpub\wwwroot\testerpage
