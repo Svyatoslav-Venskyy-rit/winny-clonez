@@ -397,7 +397,7 @@
       when: hostname_change.reboot_required
 
     # ---- Join domain before installing IIS itself ----
-       - name: Set DNS to the domain controller
+    - name: Set DNS to the domain controller
       ansible.windows.win_dns_client:
         adapter_names: '*'
         dns_servers:
