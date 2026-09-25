@@ -789,7 +789,8 @@
   tasks:
     - name: Create domain accounts
       microsoft.ad.user:
-        identity: "{{ item.identity }}"
+        identity: "{{ item.sam }}"
+        name: "{{ item.identity }}"
         sam_account_name: "{{ item.sam }}"
         firstname: "{{ item.firstname | default(omit) }}"
         surname: "{{ item.surname | default(omit) }}"
