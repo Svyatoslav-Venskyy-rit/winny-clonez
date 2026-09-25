@@ -227,6 +227,11 @@
       register: adcs_install
 
     - name: Configure Enterprise Root CA
+      become: true
+      become_method: runas
+      become_user: 'CLONE\Administrator'
+      vars:
+        ansible_become_password: "{{ ansible_password }}"
       ansible.windows.win_powershell:
         error_action: stop
         script: |
