@@ -228,6 +228,7 @@
 
     - name: Configure Enterprise Root CA
       ansible.windows.win_powershell:
+        error_action: stop
         script: |
           $caConfig = Get-ItemProperty `
             -Path "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration" `
@@ -288,6 +289,7 @@
 
     - name: Generate a certificate for the IIS host, signed by the new Root CA
       ansible.windows.win_powershell:
+        error_action: stop
         script: |
           $caCert = Get-ChildItem Cert:\LocalMachine\My |
             Where-Object { $_.Subject -match "{{ ca_common_name }}" } |
@@ -314,6 +316,7 @@
 
     - name: Export the IIS certificate to a PFX file
       ansible.windows.win_powershell:
+        error_action: stop
         script: |
           $iisFqdn = "{{ iis_hostname }}.{{ domain_name }}"
           $cert = Get-ChildItem Cert:\LocalMachine\My |
