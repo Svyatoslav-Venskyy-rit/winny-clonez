@@ -681,7 +681,49 @@
         state: present
         enabled: yes
 
-# PLAY 8: Wipe and disable the Windows Firewall on every host
+# PLAY 8: Force Group Policy update on domain-joined Windows hosts
+- name: Update Group Policy on Domain Joined Windows Hosts
+  hosts: windows
+  gather_facts: false
+
+  vars:
+    domain_name: "clone.wars"
+
+  tasks:
+
+    - name: Check domain membership
+      ansible.windows.win_shell: |
+        $ComputerSystem = Get-CimInstance Win32_ComputerSystem
+
+        if ($ComputerSystem.PartOfDomain -and $ComputerSystem.Domain -eq "{{ domain_name }}") {
+            Write-Output "DOMAIN_JOINED"
+        }
+        else {
+            Write-Output "NOT_DOMAIN_JOINED"
+        }
+      register: domain_membership
+      changed_when: false
+
+    - name: Force Group Policy update
+      ansible.windows.win_command:
+        cmd: gpupdate.exe /force
+      register: gpupdate_result
+      when: "'DOMAIN_JOINED' in domain_membership.stdout"
+
+    - name: Show Group Policy update result
+      ansible.builtin.debug:
+        var: gpupdate_result.stdout
+      when:
+        - "'DOMAIN_JOINED' in domain_membership.stdout"
+        - gpupdate_result is defined
+
+    - name: Skip Group Policy update if host is not domain joined
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} is not joined to {{ domain_name }} - skipping gpupdate."
+      when: "'NOT_DOMAIN_JOINED' in domain_membership.stdout"
+
+
+# PLAY 9: Wipe and disable the Windows Firewall on every host
 - name: Reset Windows Firewall on all hosts
   hosts: windows
   gather_facts: no
@@ -734,7 +776,7 @@
           - Private
           - Public
  
-# PLAY 9: Install the latest Firefox on every host
+# PLAY 10: Install the latest Firefox on every host
 - name: Install Mozilla Firefox on all hosts
   hosts: windows
   gather_facts: no
@@ -762,7 +804,7 @@
         creates_path: 'C:\Program Files\Mozilla Firefox\firefox.exe'
         state: present
  
-# PLAY 10: Create the remaining Grey Team / Blue Team accounts as domain accounts
+# PLAY 11: Create the remaining Grey Team / Blue Team accounts as domain accounts
 - name: Create competition domain user accounts
   hosts: windows-host-1
   gather_facts: no
@@ -820,7 +862,7 @@
           add: "{{ competition_accounts | selectattr('admin') | map(attribute='sam') | list }}"
         state: present
  
-# PLAY 11: Fully disable Windows Defender on every host so it can't auto-clean
+# PLAY 12: Fully disable Windows Defender on every host so it can't auto-clean
 - name: Disable Windows Defender on all hosts
   hosts: windows
   gather_facts: no
