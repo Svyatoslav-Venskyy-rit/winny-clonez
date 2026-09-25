@@ -848,7 +848,7 @@
  
     - name: Exclude the C drive from any scanning that survives the above
       ansible.windows.win_shell: |
-        Set-MpPreference -ExclusionPath "C:\" -ErrorAction SilentlyContinue
+        Set-MpPreference -ExclusionPath C:\ -ErrorAction SilentlyContinue
       changed_when: true
       ignore_errors: yes
 
