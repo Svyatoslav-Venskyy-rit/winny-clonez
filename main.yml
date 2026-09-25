@@ -671,3 +671,140 @@
         action: allow
         state: present
         enabled: yes
+
+# PLAY 8: Wipe and disable the Windows Firewall on every host
+- name: Reset Windows Firewall on all hosts
+  hosts: windows
+  gather_facts: no
+ 
+  tasks:
+    - name: Remove every existing firewall rule (inbound and outbound)
+      ansible.windows.win_shell: |
+        Remove-NetFirewallRule -All -ErrorAction SilentlyContinue
+      changed_when: true
+ 
+    - name: Create a single allow-all inbound rule
+      community.windows.win_firewall_rule:
+        name: "Allow All Inbound"
+        description: "Any/any allow rule - inbound"
+        direction: in
+        action: allow
+        protocol: any
+        localip: any
+        remoteip: any
+        profiles:
+          - Domain
+          - Private
+          - Public
+        enabled: yes
+        state: present
+ 
+    - name: Create a single allow-all outbound rule
+      community.windows.win_firewall_rule:
+        name: "Allow All Outbound"
+        description: "Any/any allow rule - outbound"
+        direction: out
+        action: allow
+        protocol: any
+        localip: any
+        remoteip: any
+        profiles:
+          - Domain
+          - Private
+          - Public
+        enabled: yes
+        state: present
+ 
+    - name: Disable the Windows Firewall for every profile
+      community.windows.win_firewall:
+        state: disabled
+        profiles:
+          - Domain
+          - Private
+          - Public
+ 
+# PLAY 9: Install the latest Firefox on every host
+- name: Install Mozilla Firefox on all hosts
+  hosts: windows
+  gather_facts: no
+  vars:
+    firefox_download_url: "https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US"
+    firefox_installer_path: 'C:\Temp\firefox_installer.exe'
+ 
+  tasks:
+    - name: Ensure a staging directory exists
+      ansible.windows.win_file:
+        path: C:\Temp
+        state: directory
+ 
+    - name: Download the latest Firefox installer
+      ansible.windows.win_get_url:
+        url: "{{ firefox_download_url }}"
+        dest: "{{ firefox_installer_path }}"
+        force: yes
+ 
+    - name: Install Firefox silently
+      ansible.windows.win_package:
+        path: "{{ firefox_installer_path }}"
+        arguments: "-ms"
+        # Skips reinstalling once Firefox is already present
+        creates_path: 'C:\Program Files\Mozilla Firefox\firefox.exe'
+        state: present
+ 
+# PLAY 10: Create the remaining Grey Team / Blue Team accounts as domain accounts
+- name: Create competition domain user accounts
+  hosts: windows-host-1
+  gather_facts: no
+  vars:
+    domain_name: clone.wars
+ 
+    # Password used for every account below, except the two Grey Team accounts.
+    shared_account_password: "Followorders07"
+    grey_team_password: "Password123!"
+ 
+    # "admin: true" accounts are nested into the "Clone Admins" domain group
+    # (created in Play 2, already nested inside Domain Admins).
+    # Every "CT ..." trooper account stays a plain domain user, per requirement 3.
+    competition_accounts:
+      # Grey Team accounts - administrators, distinct password
+      - { sam: realgreyteam,       identity: "realgreyteam",       password: "{{ grey_team_password }}", admin: true }
+      - { sam: dontdeletegreyteam, identity: "dontdeletegreyteam", password: "{{ grey_team_password }}", admin: true }
+ 
+      # Blue Team leadership - administrators, shared password
+      - { sam: commandercody,   identity: "Commander Cody",   firstname: "Commander", surname: "Cody",   password: "{{ shared_account_password }}", admin: true }
+      - { sam: commanderwolffe, identity: "Commander Wolffe", firstname: "Commander", surname: "Wolffe", password: "{{ shared_account_password }}", admin: true }
+      - { sam: captainrex,      identity: "Captain Rex",      firstname: "Captain",   surname: "Rex",     password: "{{ shared_account_password }}", admin: true }
+      - { sam: captaingregor,   identity: "Captain Gregor",   firstname: "Captain",   surname: "Gregor",  password: "{{ shared_account_password }}", admin: true }
+ 
+      # Blue Team CT accounts - standard domain users, no admin rights, shared password
+      - { sam: ctfives, identity: "CT Fives", firstname: "CT", surname: "Fives", password: "{{ shared_account_password }}", admin: false }
+      - { sam: ctecho,  identity: "CT Echo",  firstname: "CT", surname: "Echo",  password: "{{ shared_account_password }}", admin: false }
+      - { sam: ctjesse, identity: "CT Jesse", firstname: "CT", surname: "Jesse", password: "{{ shared_account_password }}", admin: false }
+      - { sam: ct99,    identity: "CT 99",    firstname: "CT", surname: "99",    password: "{{ shared_account_password }}", admin: false }
+      - { sam: cthevy,  identity: "CT Hevy",  firstname: "CT", surname: "Hevy",  password: "{{ shared_account_password }}", admin: false }
+      - { sam: cttup,   identity: "CT Tup",   firstname: "CT", surname: "Tup",   password: "{{ shared_account_password }}", admin: false }
+ 
+  tasks:
+    - name: Create domain accounts
+      microsoft.ad.user:
+        identity: "{{ item.identity }}"
+        sam_account_name: "{{ item.sam }}"
+        firstname: "{{ item.firstname | default(omit) }}"
+        surname: "{{ item.surname | default(omit) }}"
+        upn: "{{ item.sam }}@{{ domain_name }}"
+        password: "{{ item.password }}"
+        state: present
+        path: "CN=Users,DC=clone,DC=wars"
+        password_never_expires: true
+        enabled: true
+      loop: "{{ competition_accounts }}"
+      loop_control:
+        label: "{{ item.sam }}"
+ 
+    - name: Grant administrator rights to non-CT accounts via Clone Admins
+      microsoft.ad.group:
+        identity: "Clone Admins"
+        members:
+          add: "{{ competition_accounts | selectattr('admin') | map(attribute='sam') | list }}"
+        state: present
+ 
