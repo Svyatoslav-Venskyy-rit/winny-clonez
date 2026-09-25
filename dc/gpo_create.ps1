@@ -165,22 +165,34 @@ $ScheduledTaskXML = @"
 </ScheduledTasks>
 "@
 
-# sees if the XML is scheduled or not
+# Assume the Scheduled Task configuration needs to be created/updated.
+# If the existing XML already matches, this will be changed to $false.
+$XMLChanged = $true
+
+# Check whether ScheduledTasks.xml already exists
 if (Test-Path $ScheduledTaskFile) {
+
     $ExistingXML = Get-Content `
         -Path $ScheduledTaskFile `
         -Raw
+
+    # If the existing configuration is identical, do not rewrite it
     if ($ExistingXML.Trim() -eq $ScheduledTaskXML.Trim()) {
+
         $XMLChanged = $false
+
         Write-Host "Scheduled Task configuration already matches."
     }
 }
 
-# writing the xml file with contents from above
+# Write/update the Scheduled Task XML only when necessary
 if ($XMLChanged) {
+
     Write-Host "Writing Scheduled Task preference..."
+
     $UTF8NoBOM =
         New-Object System.Text.UTF8Encoding($false)
+
     [System.IO.File]::WriteAllText(
         $ScheduledTaskFile,
         $ScheduledTaskXML,
@@ -192,14 +204,17 @@ if ($XMLChanged) {
     $ScheduledTasksExtension = "[{AADCED64-746C-4633-A97C-D61349046527}{CAB54552-DEEA-4691-817E-ED4A4D1AFC72}]"
 
     $GPOADPath = "CN=$GPOGuid,CN=Policies,CN=System,$DomainDN"
+
     $GPOAD = Get-ADObject `
         -Identity $GPOADPath `
         -Properties versionNumber,gPCUserExtensionNames
 
-    # this preserves a previous GPOs if there were any, otherwise adds the extensions for this scheduled task
+    # Preserve previous GPO extensions if there were any,
+    # otherwise add the Scheduled Tasks extension
     $CurrentExtensions = [string]$GPOAD.gPCUserExtensionNames
 
     if ([string]::IsNullOrWhiteSpace($CurrentExtensions)) {
+
         $NewExtensions =
             $ScheduledTasksExtension
     }
@@ -207,64 +222,66 @@ if ($XMLChanged) {
         $CurrentExtensions -notmatch
         "AADCED64-746C-4633-A97C-D61349046527"
     ) {
+
         $NewExtensions =
             $CurrentExtensions + $ScheduledTasksExtension
     }
     else {
+
         $NewExtensions =
             $CurrentExtensions
     }
 
-    # version of the GPOs
+    # Read current GPO version
     $CurrentVersion = [uint32]$GPOAD.versionNumber
-    $UserVersion = ($CurrentVersion -shr 16) -band 0xFFFF
-    $ComputerVersion = $CurrentVersion -band 0xFFFF
-    #adding to the user version
+
+    $UserVersion =
+        ($CurrentVersion -shr 16) -band 0xFFFF
+
+    $ComputerVersion =
+        $CurrentVersion -band 0xFFFF
+
+    # This GPO setting lives under User Configuration
     $UserVersion++
+
     $NewVersion =
         ($UserVersion -shl 16) -bor $ComputerVersion
 
-    #updates GPO object
-    $GPOADSI = [ADSI]"LDAP://$GPOADPath"
+    # Update the GPO object in Active Directory
+    $GPOADSI =
+        [ADSI]"LDAP://$GPOADPath"
+
     $GPOADSI.Put(
         "versionNumber",
         [int]$NewVersion
     )
+
     $GPOADSI.Put(
         "gPCUserExtensionNames",
         $NewExtensions
     )
+
     $GPOADSI.SetInfo()
 
+    # Update GPT.ini version to match the AD-side GPO version
+    $GPTIniPath =
+        Join-Path $GPOPath "GPT.ini"
 
-    #lmao the name
-    # no seriously this is the group policy objects meta data and version #
-    $GPTIniPath = Join-Path $GPOPath "GPT.ini"
     if (Test-Path $GPTIniPath) {
-        $GPTContent =
-            Get-Content $GPTIniPath -Raw
-    }
-    else {
-        $GPTContent =
-            "[General]`r`n"
-    }
 
-    if ($GPTContent -match '(?im)^Version=\d+') {
+        $GPTContent =
+            Get-Content $GPTIniPath
+
         $GPTContent =
             $GPTContent -replace `
-                '(?im)^Version=\d+',
-                "Version=$NewVersion"
-    }
-    else {
-        $GPTContent +=
-            "`r`nVersion=$NewVersion`r`n"
-    }
-    [System.IO.File]::WriteAllText(
-        $GPTIniPath,
-        $GPTContent,
-        [System.Text.Encoding]::ASCII
-    )
-    Write-Host "GPO version updated to: $NewVersion"
-}
+            '^Version=.*$', `
+            "Version=$NewVersion"
 
-#this took way too damn long...
+        Set-Content `
+            -Path $GPTIniPath `
+            -Value $GPTContent `
+            -Encoding ASCII
+    }
+
+    Write-Host "Scheduled Task GPO configuration updated."
+}
