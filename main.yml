@@ -369,7 +369,7 @@
 
     - name: Copy cursor files
       ansible.windows.win_copy:
-        src: iis/imgs/customcursor.cur
+        src: IIS/imgs/customcursor.cur
         dest: C:\Windows\Cursors
 
     - name: Set cursor theme
