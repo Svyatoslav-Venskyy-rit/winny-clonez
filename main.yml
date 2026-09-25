@@ -388,7 +388,7 @@
 
     - name: Apply cursor theme
       ansible.windows.win_powershell:
-        script: "{{ lookup('file', 'iis/cursorscript.ps1') }}"
+        script: "{{ lookup('file', 'IIS/cursorscript.ps1') }}"
 
     - name: Reboot After hostname and cursor change
       ansible.windows.win_reboot:
