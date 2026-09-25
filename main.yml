@@ -123,66 +123,75 @@
 
   ### need to add rest of the A records for the other hosts, this is ez to do!!!
 
-  - name: Create A Records
+  - name: Create DNS A records for competition hosts
     ansible.windows.win_dns_record:
-      name: box1
+      name: "{{ item.name }}"
       type: A
-      value: "192.168.1.51"
+      value: "{{ item.ip }}"
       zone: "{{ domain_name }}"
       state: present
+    loop:
+      # Windows subnet
+      - { name: "coruscant", ip: "10.110.20.11" }
+      - { name: "naboo",     ip: "10.110.20.12" }
+      - { name: "kamino",    ip: "10.110.20.13" }
+      - { name: "felucia",   ip: "10.110.20.14" }
+      - { name: "alderaan",  ip: "10.110.20.15" }
+      
+      # Linux subnet
+      - { name: "geonosis",  ip: "10.110.10.11" }
+      - { name: "mandalore", ip: "10.110.10.12" }
+      - { name: "kashyyyk",  ip: "10.110.10.13" }
+      - { name: "utapau",    ip: "10.110.10.14" }
+      - { name: "mustafar",  ip: "10.110.10.15" }
+
+    loop_control:
+      label: "{{ item.name }} -> {{ item.ip }}"
+
+# PLAY 3A: Deploy notification files to all Windows hosts
+- name: Deploy Galactic Republic Notification Files
+  hosts: windows
+  vars:
+    republic_path: 'C:\Program Files\Galactic_Republic'
+
+  tasks:
+
+    - name: Create Galactic_Republic directory
+      ansible.windows.win_file:
+        path: "{{ republic_path }}"
+        state: directory
+
+    - name: Copy notification PowerShell script
+      ansible.windows.win_copy:
+        src: dc/notifications.ps1
+        dest: "{{ republic_path }}\notifications.ps1"
+
+    - name: Copy notification logo
+      ansible.windows.win_copy:
+        src: dc/logo.png
+        dest: "{{ republic_path }}\logo.png"
 
 
-
-# PLAY 3: GPO / login notification rollout
-- name: Notification Creation
+# PLAY 3B: Create domain-wide notification GPO on Coruscant
+- name: Create Galactic Republic Notification GPO
   hosts: windows-host-1
   vars:
     republic_path: 'C:\Program Files\Galactic_Republic'
 
   tasks:
-  - name: Creating Galactic_Republic Directory
-    ansible.windows.win_file:
-      path: "{{ republic_path }}"
-      state: directory
 
-  - name: Copy Notif PS1
-    ansible.windows.win_copy:
-      src: dc/notifications.ps1
-      dest: "{{ republic_path }}"
+    - name: Copy GPO creation PowerShell script
+      ansible.windows.win_copy:
+        src: dc/gpo_create.ps1
+        dest: "{{ republic_path }}\gpo_create.ps1"
 
-  - name: Copy PNG
-    ansible.windows.win_copy:
-      src: dc/logo.png
-      dest: "{{ republic_path }}"
+    - name: Run the GPO creation script
+      ansible.windows.win_command:
+        cmd: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\Galactic_Republic\gpo_create.ps1"
 
-  - name: Copy GPO PS1
-    ansible.windows.win_copy:
-      src: dc/gpo_create.ps1
-      dest: "{{ republic_path }}"
 
-  - name: Set PowerShell Execution Policy to allow all
-    ansible.windows.win_regedit:
-      path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell
-      name: EnableScripts
-      data: 1
-      type: dword
-      state: present
 
-  - name: Allow all PowerShell scripts
-    ansible.windows.win_regedit:
-      path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell
-      name: ExecutionPolicy
-      data: Unrestricted
-      type: string
-      state: present
 
-  - name: Update gpo policy to easily run gpo ps1
-    ansible.windows.win_command:
-      cmd: gpupdate.exe /force
-
-  - name: Run the GPO PS1
-    ansible.windows.win_command:
-      cmd: powershell.exe -NoProfile -File "C:\Program Files\Galactic_Republic\gpo_create.ps1"
 
 # PLAY 4: Certification Authority
 - name: Deploy Competition CA
