@@ -6,41 +6,43 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Kamino IIS Outpost</title>
 	<style>
-		:root { --ice:#a9f3ff; --blue:#071a2a; --panel:rgba(8,32,48,.88); }
+		:root { --gold:#f3d477; --green:#183d32; --panel:rgba(20,48,39,.9); }
 		* { box-sizing:border-box; }
-		body { margin:0; min-height:100vh; color:#e8fbff; font:16px/1.6 Arial,sans-serif; background:linear-gradient(#193d55,#061521 62%,#02070b); }
-		header { padding:70px 20px 45px; text-align:center; background:radial-gradient(ellipse at 50% 0,#43718a,#102c3d 45%,transparent 70%); }
-		.eyebrow { color:var(--ice); letter-spacing:.25em; text-transform:uppercase; font-size:.75rem; }
-		h1 { margin:12px 0; color:#fff; font-size:clamp(3rem,10vw,6rem); letter-spacing:.16em; text-transform:uppercase; text-shadow:0 0 22px #65def5; }
-		header p { max-width:650px; margin:auto; color:#c4dce4; }
+		body { margin:0; min-height:100vh; color:#fff8df; font:16px/1.6 Arial,sans-serif; background:linear-gradient(#729b82,#254d3d 62%,#0b211a); }
+		header { padding:70px 20px 45px; text-align:center; background:radial-gradient(ellipse at 50% 0,#d8c784,#628b73 45%,transparent 70%); }
+		.eyebrow { color:var(--gold); letter-spacing:.25em; text-transform:uppercase; font-size:.75rem; }
+		h1 { margin:12px 0; color:#fff; font-size:clamp(3rem,10vw,6rem); letter-spacing:.16em; text-transform:uppercase; text-shadow:0 0 22px #f3d477; }
+		header p { max-width:650px; margin:auto; color:#f1e8c5; }
 		main { width:min(1000px,92%); margin:0 auto 50px; }
-		.status,.card { border:1px solid #35647a; border-radius:8px; background:var(--panel); box-shadow:0 8px 30px #0006; }
+		.status,.card { border:1px solid #b59a4d; border-radius:8px; background:var(--panel); box-shadow:0 8px 30px #0006; }
 		.status { display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px; padding:16px 20px; }
-		.online { color:#7dffac; font-weight:bold; }
+		.online { color:#b9e69b; font-weight:bold; }
 		.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin-top:16px; }
 		.card { padding:22px; }
-		h2 { margin-top:0; color:var(--ice); font-size:1.05rem; letter-spacing:.08em; text-transform:uppercase; }
+		h2 { margin-top:0; color:var(--gold); font-size:1.05rem; letter-spacing:.08em; text-transform:uppercase; }
 		.value { font-size:2rem; font-weight:bold; }
-		.bar { height:7px; margin-top:12px; overflow:hidden; border-radius:9px; background:#15394b; }
-		.bar span { display:block; width:100%; height:100%; background:linear-gradient(90deg,#36b9dc,var(--ice)); }
-		footer { padding:20px; color:#8aaab5; text-align:center; font-size:.85rem; }
+		.bar { height:7px; margin-top:12px; overflow:hidden; border-radius:9px; background:#315c45; }
+		.bar span { display:block; width:100%; height:100%; background:linear-gradient(90deg,#b59a4d,var(--gold)); }
+		.flag { margin:16px 0 0; padding:12px; border:1px solid var(--gold); color:var(--gold); text-align:center; font-family:monospace; font-weight:bold; }
+		footer { padding:20px; color:#c9c49d; text-align:center; font-size:.85rem; }
 	</style>
 </head>
 <body>
 	<header>
-		<div class="eyebrow">Outer Rim • Tipoca City • IIS Test Node</div>
-		<h1>Kamino</h1>
-		<p>Welcome to the storm-washed ocean world. This page confirms that the Kamino outpost server is responding successfully.</p>
+		<div class="eyebrow">Mid Rim • Theed • IIS Test Node</div>
+		<h1>Naboo</h1>
+		<p>Welcome to the verdant world of Naboo. This page confirms that the Naboo outpost server is responding successfully.</p>
 	</header>
 	<main>
-		<div class="status"><span>SERVER: <b class="online">● ONLINE</b></span><span>SECTOR: KAMINO</span><span>RELAY: SECURE</span></div>
+		<div class="status"><span>SERVER: <b class="online">● ONLINE</b></span><span>SECTOR: NABOO</span><span>RELAY: SECURE</span></div>
+		<div class="flag">SCORECHECKER{"NABOO IS ONLINE"}</div>
 		<div class="grid">
-			<section class="card"><h2>Oceanic Climate</h2><div class="value">STORMY</div><p>Perpetual rain systems detected.</p><div class="bar"><span></span></div></section>
-			<section class="card"><h2>Facility Uptime</h2><div class="value">99.99%</div><p>Tipoca systems operational.</p><div class="bar"><span style="width:99%"></span></div></section>
-			<section class="card"><h2>Relay Signal</h2><div class="value">CLEAR</div><p>Transmission received by the outpost.</p><div class="bar"><span style="width:86%"></span></div></section>
+			<section class="card"><h2>Lake Country Climate</h2><div class="value">SERENE</div><p>Temperate skies and green valleys detected.</p><div class="bar"><span></span></div></section>
+			<section class="card"><h2>Palace Uptime</h2><div class="value">99.99%</div><p>Theed systems operational.</p><div class="bar"><span style="width:99%"></span></div></section>
+			<section class="card"><h2>Relay Signal</h2><div class="value">CLEAR</div><p>Transmission received across the galaxy.</p><div class="bar"><span style="width:86%"></span></div></section>
 		</div>
-		<section class="card" style="margin-top:16px"><h2>Kamino Operations</h2><p>Clouds above. Endless ocean below. If you can read this message, your IIS deployment is visible across the galaxy.</p></section>
+		<section class="card" style="margin-top:16px"><h2>Naboo Operations</h2><p>Waterfalls below. Green hills beyond. If you can read this message, your IIS deployment is visible across the galaxy.</p></section>
 	</main>
-	<footer>Kamino Oceanic Operations // Fictional test environment</footer>
+	<footer>Naboo Planetary Operations // Fictional test environment</footer>
 </body>
 </html>
