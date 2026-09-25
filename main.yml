@@ -445,7 +445,7 @@
 
     - name: copy index to directory
       ansible.windows.win_copy:
-        src: iis/pages/index.html
+        src: IIS/pages/index.html
         dest: C:\inetpub\wwwroot\testerpage\index.html
 
     - name: remove previous instance of tester page if it exists
