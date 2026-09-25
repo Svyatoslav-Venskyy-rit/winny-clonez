@@ -164,12 +164,12 @@
     - name: Copy notification PowerShell script
       ansible.windows.win_copy:
         src: dc/notifications.ps1
-        dest: "{{ republic_path }}\notifications.ps1"
+        dest: '{{ republic_path }}\notifications.ps1'
 
     - name: Copy notification logo
       ansible.windows.win_copy:
         src: dc/logo.png
-        dest: "{{ republic_path }}\logo.png"
+        dest: '{{ republic_path }}\logo.png'
 
 
 # PLAY 3B: Create domain-wide notification GPO on Coruscant
@@ -183,14 +183,11 @@
     - name: Copy GPO creation PowerShell script
       ansible.windows.win_copy:
         src: dc/gpo_create.ps1
-        dest: "{{ republic_path }}\gpo_create.ps1"
+        dest: '{{ republic_path }}\gpo_create.ps1'
 
     - name: Run the GPO creation script
       ansible.windows.win_command:
         cmd: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\Galactic_Republic\gpo_create.ps1"
-
-
-
 
 
 # PLAY 4: Certification Authority
