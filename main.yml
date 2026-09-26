@@ -1180,3 +1180,67 @@
               $Ansible.Changed = $true
               Write-Output "Wallpaper applied in desktop session $desktopSessionId."
           }
+
+    - name: Inspect wallpaper settings and execution logs
+      tags:
+        - wallpaper_diagnostics
+      become: true
+      become_method: runas
+      become_user: SYSTEM
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          $Ansible.Changed = $false
+
+          $task = Get-ScheduledTaskInfo -TaskName 'Galactic Republic Wallpaper'
+          Write-Output "Current time: $((Get-Date).ToString('o'))"
+          Write-Output "Last run: $($task.LastRunTime.ToString('o'))"
+          Write-Output "Task result: $($task.LastTaskResult)"
+
+          $profiles = Get-CimInstance Win32_UserProfile |
+              Where-Object { $_.Loaded -and -not $_.Special }
+
+          foreach ($profile in $profiles) {
+              Write-Output "PROFILE: $($profile.LocalPath)"
+              $root = "Registry::HKEY_USERS\$($profile.SID)"
+
+              $paths = @(
+                  "$root\Control Panel\Desktop"
+                  "$root\Software\Microsoft\Windows\CurrentVersion\Policies\System"
+                  "$root\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop"
+              )
+
+              foreach ($path in $paths) {
+                  $values = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
+                  Write-Output "KEY: $path"
+                  if ($null -ne $values) {
+                      $values |
+                          Select-Object Wallpaper, WallpaperStyle, NoChangingWallPaper |
+                          ConvertTo-Json -Compress |
+                          Write-Output
+                  }
+              }
+
+              $temp = Join-Path $profile.LocalPath 'AppData\Local\Temp'
+              $log = Get-ChildItem -LiteralPath $temp `
+                  -Filter GalacticRepublicWallpaper.log `
+                  -Recurse -File -ErrorAction SilentlyContinue |
+                  Sort-Object LastWriteTime -Descending |
+                  Select-Object -First 1
+
+              if ($log) {
+                  Write-Output "LOG: $($log.FullName)"
+                  Write-Output "Modified: $($log.LastWriteTime.ToString('o'))"
+                  Get-Content -LiteralPath $log.FullName | Write-Output
+              }
+              else {
+                  Write-Output 'No wallpaper execution log found for this profile.'
+              }
+          }
+      register: wallpaper_diagnostics
+
+    - name: Display wallpaper diagnostics
+      tags:
+        - wallpaper_diagnostics
+      ansible.builtin.debug:
+        var: wallpaper_diagnostics.output
