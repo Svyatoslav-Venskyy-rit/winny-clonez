@@ -637,14 +637,17 @@
         state: present
         enabled: yes
 
-# PLAY 7A: Deploy notification files to all Windows hosts
+# PLAY 7A: Deploy notification files to every Windows host
 - name: Deploy Galactic Republic Notification Files
   hosts: windows
+  gather_facts: false
+  tags:
+    - notifications
+
   vars:
     republic_path: 'C:\Program Files\Galactic_Republic'
 
   tasks:
-
     - name: Create Galactic_Republic directory
       ansible.windows.win_file:
         path: "{{ republic_path }}"
@@ -661,78 +664,109 @@
         dest: '{{ republic_path }}\logo.png'
 
 
-# PLAY 7B: Create domain-wide notification GPO on Coruscant
-- name: Create Galactic Republic Notification GPO
+# PLAY 7B: Stop the old user GPO from managing the notification task
+- name: Disable the old notification GPO link
   hosts: windows-host-1
-  vars:
-    republic_path: 'C:\Program Files\Galactic_Republic'
+  gather_facts: false
+  tags:
+    - notifications
 
   tasks:
+    - name: Disable notification GPO link at the domain root
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          Import-Module GroupPolicy
+          Import-Module ActiveDirectory
 
-    - name: Copy GPO creation PowerShell script
-      ansible.windows.win_copy:
-        src: dc/gpo_create.ps1
-        dest: '{{ republic_path }}\gpo_create.ps1'
+          $Ansible.Changed = $false
+          $domainDN = (Get-ADDomain).DistinguishedName
 
-    - name: Run the GPO creation script
-      ansible.windows.win_command:
-        cmd: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\Galactic_Republic\gpo_create.ps1"
+          $links = (Get-GPInheritance -Target $domainDN).GpoLinks |
+              Where-Object {
+                  $_.DisplayName -eq 'Galactic Republic Notification'
+              }
 
-# PLAY 7C: Apply Group Policy to every domain-joined Windows host
-- name: Force Group Policy update on all Windows hosts
-  hosts: windows
-  gather_facts: no
+          foreach ($link in $links) {
+              if ($link.Enabled) {
+                  Set-GPLink -Guid $link.GpoId `
+                      -Target $domainDN `
+                      -LinkEnabled No | Out-Null
 
-  tasks:
-    - name: Run gpupdate
-      ansible.windows.win_command:
-        cmd: gpupdate.exe /force
-      changed_when: false
+                  $Ansible.Changed = $true
+              }
+          }
 
 
-# PLAY 8: Force Group Policy update on domain-joined Windows hosts
-- name: Update Group Policy on Domain Joined Windows Hosts
+# PLAY 7C: Create and start the notification task on every Windows host
+- name: Configure Galactic Republic Notification Tasks
   hosts: windows
   gather_facts: false
-
-  vars:
-    domain_name: "clone.wars"
+  tags:
+    - notifications
 
   tasks:
+    - name: Remove old per-user notification tasks if present
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          $Ansible.Changed = $false
 
-    - name: Check domain membership
-      ansible.windows.win_shell: |
-        $ComputerSystem = Get-CimInstance Win32_ComputerSystem
+          $oldTasks = Get-ScheduledTask | Where-Object {
+              $_.TaskPath -eq '\' -and
+              $_.TaskName -like 'Galactic Republic Notification - *'
+          }
 
-        if ($ComputerSystem.PartOfDomain -and $ComputerSystem.Domain -eq "{{ domain_name }}") {
-            Write-Output "DOMAIN_JOINED"
-        }
-        else {
-            Write-Output "NOT_DOMAIN_JOINED"
-        }
-      register: domain_membership
-      changed_when: false
+          foreach ($task in $oldTasks) {
+              $task | Unregister-ScheduledTask -Confirm:$false
+              $Ansible.Changed = $true
+          }
 
-    - name: Force Group Policy update
-      ansible.windows.win_command:
-        cmd: gpupdate.exe /force
-      register: gpupdate_result
-      when: "'DOMAIN_JOINED' in domain_membership.stdout"
+    - name: Configure notification for interactive local or domain users
+      community.windows.win_scheduled_task:
+        name: Galactic Republic Notification
+        path: '\'
+        description: Show the Republic notification every two minutes.
+        group: 'S-1-5-4'
+        logon_type: group
+        run_level: limited
 
-    - name: Show Group Policy update result
-      ansible.builtin.debug:
-        var: gpupdate_result.stdout
-      when:
-        - "'DOMAIN_JOINED' in domain_membership.stdout"
-        - gpupdate_result is defined
+        actions:
+          - path: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+            arguments: '-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Program Files\Galactic_Republic\notifications.ps1"'
+            working_directory: 'C:\Program Files\Galactic_Republic'
 
-    - name: Skip Group Policy update if host is not domain joined
-      ansible.builtin.debug:
-        msg: "{{ inventory_hostname }} is not joined to {{ domain_name }} - skipping gpupdate."
-      when: "'NOT_DOMAIN_JOINED' in domain_membership.stdout"
+        triggers:
+          - type: daily
+            start_boundary: '2026-01-01T00:00:00'
+            days_interval: 1
+            repetition:
+              interval: PT2M
+              duration: P1D
+              stop_at_duration_end: false
 
+          - type: logon
 
-# PLAY 9: Wipe and disable the Windows Firewall on every host
+        multiple_instances: 2
+        execution_time_limit: PT1M
+        disallow_start_if_on_batteries: false
+        stop_if_going_on_batteries: false
+        run_only_if_idle: false
+        run_only_if_network_available: false
+        start_when_available: true
+        allow_demand_start: true
+        enabled: true
+        state: present
+
+    - name: Start the notification task now
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          Start-ScheduledTask `
+              -TaskPath '\' `
+              -TaskName 'Galactic Republic Notification'
+
+# PLAY 8: Wipe and disable the Windows Firewall on every host
 - name: Reset Windows Firewall on all hosts
   hosts: windows
   gather_facts: no
@@ -785,7 +819,7 @@
           - Private
           - Public
  
-# PLAY 10: Install the latest Firefox on every host
+# PLAY 9: Install the latest Firefox on every host
 - name: Install Mozilla Firefox on all hosts
   hosts: windows
   gather_facts: no
@@ -813,7 +847,7 @@
         creates_path: 'C:\Program Files\Mozilla Firefox\firefox.exe'
         state: present
  
-# PLAY 11: Create the remaining Grey Team / Blue Team accounts as domain accounts
+# PLAY 10: Create the remaining Grey Team / Blue Team accounts as domain accounts
 - name: Create competition domain user accounts
   hosts: windows-host-1
   gather_facts: no
@@ -871,7 +905,7 @@
           add: "{{ competition_accounts | selectattr('admin') | map(attribute='sam') | list }}"
         state: present
  
-# PLAY 12: Fully disable Windows Defender on every host so it can't auto-clean
+# PLAY 11: Fully disable Windows Defender on every host so it can't auto-clean
 - name: Disable Windows Defender on all hosts
   hosts: windows
   gather_facts: no
