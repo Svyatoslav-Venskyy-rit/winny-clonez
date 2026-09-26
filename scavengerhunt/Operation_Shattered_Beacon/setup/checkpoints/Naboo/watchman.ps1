@@ -9,7 +9,32 @@ param(
 $ExpectedHost = 'Naboo'
 . (Join-Path $PSScriptRoot '..\..\Common.ps1')
 New-Item -ItemType Directory -Path 'C:\Republic\Hunt\Escort' -Force | Out-Null
-$svc = Get-Service -Name RepublicEscort -ErrorAction SilentlyContinue
-if ($svc) { throw 'RepublicEscort already exists; verify it is your hunt fixture before reusing it' }
-New-Service -Name RepublicEscort -DisplayName 'Republic Escort Record' -BinaryPathName "$env:SystemRoot\System32\cmd.exe /c exit 0" -StartupType Disabled -Description 'Courier fallback extraction word: HOLDFAST' | Out-Null
-Get-CimInstance Win32_Service -Filter "Name='RepublicEscort'" | Select-Object Name,State,StartMode,Description
+$expectedPath = "$env:SystemRoot\System32\cmd.exe /c exit 0"
+$expectedDescription = 'Courier fallback extraction word: HOLDFAST'
+
+$svc = Get-CimInstance Win32_Service -Filter "Name='RepublicEscort'"
+
+if ($null -eq $svc) {
+    New-Service -Name RepublicEscort `
+        -DisplayName 'Republic Escort Record' `
+        -BinaryPathName $expectedPath `
+        -StartupType Disabled `
+        -Description $expectedDescription | Out-Null
+
+    Write-Host 'Created RepublicEscort hunt fixture.'
+}
+else {
+    if (
+        $svc.PathName -ne $expectedPath -or
+        $svc.DisplayName -ne 'Republic Escort Record' -or
+        $svc.Description -ne $expectedDescription -or
+        $svc.StartMode -ne 'Disabled'
+    ) {
+        throw 'RepublicEscort exists but does not match the expected hunt fixture. Inspect it before changing it.'
+    }
+
+    Write-Host 'RepublicEscort already matches the hunt fixture; reusing it.'
+}
+
+Get-CimInstance Win32_Service -Filter "Name='RepublicEscort'" |
+    Select-Object Name, State, StartMode, Description
