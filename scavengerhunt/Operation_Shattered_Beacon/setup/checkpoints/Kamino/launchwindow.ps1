@@ -48,9 +48,21 @@ else {
             'SYSTEM', 'NT AUTHORITY\SYSTEM', 'S-1-5-18'
         ) -or
         $existing.Principal.LogonType -ne 'ServiceAccount' -or
-        @($existing.Triggers).Count -gt 0
+        @($existing.Triggers | Where-Object { $null -ne $_ }).Count -gt 0
     ) {
-        throw 'MidnightLaunch exists but does not match the expected hunt fixture. Inspect it before changing it.'
+        $details = [ordered]@{
+            ActionCount = $actions.Count
+            Execute = $actions[0].Execute
+            Arguments = $actions[0].Arguments
+            Enabled = $existing.Settings.Enabled
+            UserId = $existing.Principal.UserId
+            LogonType = [string]$existing.Principal.LogonType
+            TriggerCount = @(
+                $existing.Triggers | Where-Object { $null -ne $_ }
+            ).Count
+        } | ConvertTo-Json -Compress
+
+        throw "MidnightLaunch configuration mismatch: $details"
     }
 
     Write-Host 'MidnightLaunch already matches the hunt fixture; reusing it.'
