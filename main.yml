@@ -152,6 +152,8 @@
 # PLAY 3: Certification Authority
 - name: Deploy Competition CA
   hosts: windows-host-3
+  tags: 
+    - kamino_ca
   vars:
     ca_common_name: "CDT-Root-CA"
     ca_key_length: 2048
@@ -175,15 +177,74 @@
         Resolve-DnsName -Name "_ldap._tcp.dc._msdcs.{{ domain_name }}" -Type SRV -DnsOnly -ErrorAction Stop
       changed_when: false
 
-    - name: Join the domain
+    - name: Inspect the CA host before any rename or removal
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          $Ansible.Changed = $false
+          $name = (Get-CimInstance Win32_ComputerSystem).Name
+          if ($name -notin @('WINDOWS-HOST-3', 'Kamino')) {
+              throw "Unexpected computer name '$name'; refusing automatic CA removal."
+          }
+          $config = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration' -ErrorAction SilentlyContinue
+          $active = [string]$config.Active
+          if ($active -and $active -ne '{{ ca_common_name }}') {
+              throw "Unexpected CA '$active'; refusing to change a different CA."
+          }
+          $Ansible.Result = @{
+              computer_name = $name
+              rename_required = ($name -ine 'Kamino')
+              ca_configured = [bool]$active
+          }
+      register: kamino_before
+
+    - name: Remove the disposable CA only while the old hostname is present
+      when: kamino_before.result.rename_required | bool
+      block:
+        - name: Unconfigure the old disposable CA if configured
+          become: true
+          become_method: runas
+          become_user: 'CLONE\Administrator'
+          vars:
+            ansible_become_password: "{{ ansible_password }}"
+          ansible.windows.win_powershell:
+            error_action: stop
+            script: |
+              Import-Module ADCSDeployment
+              Uninstall-AdcsCertificationAuthority -Force -ErrorAction Stop
+          when: kamino_before.result.ca_configured | bool
+
+        - name: Remove the CA role so Windows permits the hostname change
+          ansible.windows.win_feature:
+            name: ADCS-Cert-Authority
+            state: absent
+          register: kamino_ca_removal
+
+        - name: Reboot after removing the CA role when needed
+          ansible.windows.win_reboot:
+            reboot_timeout: 1200
+          when: >-
+            (kamino_ca_removal.changed | bool) or
+            (kamino_ca_removal.reboot_required | default(false) | bool)
+
+    - name: Ensure host 3 is named Kamino and joined to the domain
       microsoft.ad.membership:
+        hostname: Kamino
         dns_domain_name: "{{ domain_name }}"
         domain_admin_user: "{{ domain_admin_user }}"
         domain_admin_password: "{{ domain_admin_password }}"
         state: domain
         reboot: true
 
-    # ---- Original CA build-out, unchanged ----
+    - name: Verify the active hostname before installing the CA
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          $Ansible.Changed = $false
+          $name = (Get-CimInstance Win32_ComputerSystem).Name
+          if ($name -ine 'Kamino') { throw "Expected Kamino after reboot, found $name." }
+          Write-Output "Verified hostname: $name"
+
     - name: Install AD CS CA role
       ansible.windows.win_feature:
         name: ADCS-Cert-Authority
@@ -191,7 +252,12 @@
         include_management_tools: true
       register: adcs_install
 
-    - name: Configure Enterprise Root CA
+    - name: Reboot if CA role installation requires it
+      ansible.windows.win_reboot:
+        reboot_timeout: 1200
+      when: adcs_install.reboot_required | default(false) | bool
+
+    - name: Configure Enterprise Root CA only if no CA is configured
       become: true
       become_method: runas
       become_user: 'CLONE\Administrator'
@@ -200,28 +266,39 @@
       ansible.windows.win_powershell:
         error_action: stop
         script: |
-          $caConfig = Get-ItemProperty `
-            -Path "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration" `
-            -Name "Active" `
-            -ErrorAction SilentlyContinue
-
-          if ($caConfig.Active) {
-              Write-Output "CA is already configured as $($caConfig.Active)"
-              $Ansible.Changed = $false
+          $Ansible.Changed = $false
+          $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration'
+          $config = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
+          if ($config.Active) {
+              if ($config.Active -ne '{{ ca_common_name }}') {
+                  throw "Unexpected configured CA: $($config.Active)"
+              }
+              Write-Output "Keeping existing CA: $($config.Active)"
           }
           else {
+              Import-Module ADCSDeployment
               Install-AdcsCertificationAuthority `
                 -CAType EnterpriseRootCA `
-                -CACommonName "{{ ca_common_name }}" `
-                -CryptoProviderName "RSA#Microsoft Software Key Storage Provider" `
+                -CACommonName '{{ ca_common_name }}' `
+                -CryptoProviderName 'RSA#Microsoft Software Key Storage Provider' `
                 -KeyLength {{ ca_key_length }} `
-                -HashAlgorithmName "{{ ca_hash_algorithm }}" `
+                -HashAlgorithmName '{{ ca_hash_algorithm }}' `
                 -ValidityPeriod Years `
                 -ValidityPeriodUnits {{ ca_validity_years }} `
-                -Force
-
+                -OverwriteExistingCAinDS `
+                -OverwriteExistingKey `
+                -OverwriteExistingDatabase `
+                -Force -ErrorAction Stop
+              $active = (Get-ItemProperty -LiteralPath $path -ErrorAction Stop).Active
+              if ($active -ne '{{ ca_common_name }}') { throw 'CA configuration verification failed.' }
               $Ansible.Changed = $true
           }
+
+    - name: Ensure the configured CA service is running
+      ansible.windows.win_service:
+        name: CertSvc
+        state: started
+        start_mode: auto
 
     - name: Enable Certification Services auditing
       ansible.windows.win_audit_policy_system:
@@ -257,47 +334,60 @@
         path: C:\Temp
         state: directory
 
-    - name: Generate a certificate for the IIS host, signed by the new Root CA
+    - name: Select or issue the IIS certificate using the configured CA and export it
       ansible.windows.win_powershell:
         error_action: stop
+        parameters:
+          IisFqdn: '{{ iis_hostname }}.{{ domain_name }}'
+          ExpectedCa: '{{ ca_common_name }}'
+          ValidityYears: '{{ ca_validity_years }}'
+          PfxPassword: '{{ pfx_export_password }}'
         script: |
-          $caCert = Get-ChildItem Cert:\LocalMachine\My |
-            Where-Object { $_.Subject -match "{{ ca_common_name }}" } |
-            Select-Object -First 1
+          param(
+              [string]$IisFqdn,
+              [string]$ExpectedCa,
+              [int]$ValidityYears,
+              [string]$PfxPassword
+          )
+          $base = 'HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration'
+          $active = (Get-ItemProperty -LiteralPath $base -ErrorAction Stop).Active
+          if ($active -ne $ExpectedCa) { throw "Unexpected active CA: $active" }
+          $hashes = @((Get-ItemProperty -LiteralPath "$base\$active" -ErrorAction Stop).CACertHash)
+          if (-not $hashes.Count -or -not $hashes[-1]) { throw 'No configured CA certificate thumbprint found.' }
+          $thumbprint = ([string]$hashes[-1]) -replace '\s', ''
+          $ca = Get-Item -LiteralPath "Cert:\LocalMachine\My\$thumbprint" -ErrorAction Stop
+          if (-not $ca.HasPrivateKey) { throw 'Configured CA certificate has no accessible private key.' }
 
-          $iisFqdn = "{{ iis_hostname }}.{{ domain_name }}"
-          $existing = Get-ChildItem Cert:\LocalMachine\My |
-            Where-Object { $_.Subject -eq "CN=$iisFqdn" }
-
-          if ($existing) {
-              Write-Output "Certificate for $iisFqdn already exists"
-              $Ansible.Changed = $false
+          $cert = $null
+          $candidates = Get-ChildItem Cert:\LocalMachine\My |
+              Where-Object { $_.Subject -eq "CN=$IisFqdn" -and $_.HasPrivateKey -and $_.NotAfter -gt (Get-Date).AddDays(1) } |
+              Sort-Object NotBefore -Descending
+          foreach ($candidate in $candidates) {
+              $chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
+              try {
+                  $chain.ChainPolicy.RevocationMode = 'NoCheck'
+                  $chain.ChainPolicy.VerificationFlags = 'AllowUnknownCertificateAuthority'
+                  $null = $chain.ChainPolicy.ExtraStore.Add($ca)
+                  $valid = $chain.Build($candidate)
+                  if ($valid -and $chain.ChainElements.Count -gt 1) {
+                      $root = $chain.ChainElements[$chain.ChainElements.Count - 1].Certificate
+                      if ($root.Thumbprint -eq $ca.Thumbprint) { $cert = $candidate; break }
+                  }
+              }
+              finally { $chain.Dispose() }
           }
-          else {
-              New-SelfSignedCertificate `
-                -DnsName $iisFqdn `
-                -Signer $caCert `
-                -CertStoreLocation Cert:\LocalMachine\My `
-                -KeyExportPolicy Exportable `
-                -NotAfter (Get-Date).AddYears({{ ca_validity_years }}) | Out-Null
-
-              $Ansible.Changed = $true
+          if (-not $cert) {
+              $expiry = (Get-Date).AddYears($ValidityYears)
+              if ($expiry -gt $ca.NotAfter) { $expiry = $ca.NotAfter }
+              $cert = New-SelfSignedCertificate -DnsName $IisFqdn -Signer $ca `
+                  -CertStoreLocation Cert:\LocalMachine\My -KeyExportPolicy Exportable `
+                  -NotAfter $expiry -ErrorAction Stop
           }
-
-    - name: Export the IIS certificate to a PFX file
-      ansible.windows.win_powershell:
-        error_action: stop
-        script: |
-          $iisFqdn = "{{ iis_hostname }}.{{ domain_name }}"
-          $cert = Get-ChildItem Cert:\LocalMachine\My |
-            Where-Object { $_.Subject -eq "CN=$iisFqdn" } |
-            Select-Object -First 1
-
-          $securePwd = ConvertTo-SecureString -String "{{ pfx_export_password }}" -Force -AsPlainText
-          Export-PfxCertificate `
-            -Cert $cert `
-            -FilePath "C:\Temp\iis_cert.pfx" `
-            -Password $securePwd | Out-Null
+          $password = ConvertTo-SecureString -String $PfxPassword -AsPlainText -Force
+          Export-PfxCertificate -Cert $cert -FilePath 'C:\Temp\iis_cert.pfx' `
+              -Password $password -Force -ErrorAction Stop | Out-Null
+          Write-Output "Exported $IisFqdn using configured CA certificate $($ca.Thumbprint)"
+      no_log: true
 
     - name: Fetch the PFX certificate back to the control node
       ansible.builtin.fetch:
