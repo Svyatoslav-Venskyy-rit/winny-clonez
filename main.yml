@@ -1254,7 +1254,14 @@
                 $ready = Test-Path -LiteralPath $vcvars
             }
         }
-
+        if (-not $ready) {
+            $fallback = '{{ msvc_vcvarsall }}'
+            if (Test-Path -LiteralPath $fallback) {
+                $vcRoot = Split-Path (Split-Path (Split-Path $fallback -Parent) -Parent) -Parent
+                $compiler = Join-Path $vcRoot 'Tools\MSVC\*\bin\Hostx64\x64\cl.exe'
+                $ready = Test-Path -Path $compiler
+            }
+        }
         if ($ready) { 'ready' } else { 'missing' }
       register: hunt_msvc_status
       changed_when: false
@@ -1417,10 +1424,15 @@
       ansible.builtin.set_fact:
         hunt_planet: "{{ hunt_planet_names[inventory_hostname] }}"
 
-    - name: Create organizer-only staging directory
+    - name: Create hunt staging directories on every host
       ansible.windows.win_file:
-        path: '{{ hunt_staging_dir }}'
+        path: '{{ item }}'
         state: directory
+      loop:
+        - '{{ hunt_staging_dir }}'
+        - '{{ hunt_staging_dir }}\setup'
+        - '{{ hunt_staging_dir }}\setup\checkpoints'
+        - '{{ hunt_staging_dir }}\setup\checkpoints\{{ hunt_planet }}'
 
     - name: Copy this planet's Initialize script
       ansible.windows.win_copy:
@@ -1439,16 +1451,17 @@
         src: "{{ hunt_setup_src }}/Common.ps1"
         dest: '{{ hunt_staging_dir }}\setup\Common.ps1'
 
-    - name: Prepare Coruscant evidence fixtures (DNS-gated)
-      ansible.windows.win_shell: |
-        & '{{ hunt_staging_dir }}\setup\Initialize-Coruscant.ps1' -DnsServer {{ hunt_dns_server }} -Domain '{{ hunt_domain }}'
-      when: hunt_planet == 'Coruscant'
-      register: hunt_init_result
-
     - name: Prepare this planet's evidence fixtures
       ansible.windows.win_shell: |
-        & '{{ hunt_staging_dir }}\setup\Initialize-{{ hunt_planet }}.ps1'
-      when: hunt_planet != 'Coruscant'
+        $ErrorActionPreference = 'Stop'
+        $script = '{{ hunt_staging_dir }}\setup\Initialize-{{ hunt_planet }}.ps1'
+
+        if ('{{ hunt_planet }}' -eq 'Coruscant') {
+            & $script -DnsServer '{{ hunt_dns_server }}' -Domain '{{ hunt_domain }}'
+        }
+        else {
+            & $script
+        }
       register: hunt_init_result
 
     - name: Show evidence-preparation output
