@@ -1179,3 +1179,215 @@
         - wallpaper_diagnostics
       ansible.builtin.debug:
         var: wallpaper_diagnostics.output
+
+
+# ============================================================================
+# Operation Shattered Beacon — scavenger hunt deployment
+#
+# Assumes, next to this playbook and inventory.ini:
+#   scavengerhunt/Operation_Shattered_Beacon/   (everything from the build-pack ZIP)
+#
+# Coruscant (windows-host-1) does the MSVC build, since it's the one host we
+# confirmed has the Visual Studio Build Tools. Adjust msvc_vcvarsall below if
+# its VS install path differs. Domain/DNS values match the DC set up earlier
+# in this playbook (clone.wars / 10.110.20.11).
+#
+# Flow:
+#   1. Stage the build pack on Coruscant, add the hunt DNS record, compile
+#      all 21 checkpoints, archive each planet's binaries.
+#   2. On every windows host: stage only that planet's own setup scripts,
+#      run its Initialize-<Planet>.ps1, drop its compiled executables into
+#      C:\Republic\Hunt, and confirm at least one .exe landed.
+#   3. Once every planet has confirmed a successful deploy, wipe the
+#      organizer-only staging folder on Coruscant (source, answer keys,
+#      build config, everything) so there's no trace left for players to find.
+# ============================================================================
+
+# PLAY: Stage and build Operation Shattered Beacon on Coruscant
+- name: Stage and build Operation Shattered Beacon on Coruscant
+  hosts: windows-host-1
+  vars:
+    hunt_domain: clone.wars
+    hunt_dns_server: "10.110.20.11"
+    hunt_pack_src: "{{ playbook_dir }}/scavengerhunt/Operation_Shattered_Beacon"
+    hunt_staging_dir: 'C:\Republic\HuntBuild'
+    # Only used as a fallback if cl.exe isn't already on PATH. Adjust to match
+    # the actual Visual Studio Build Tools install on this host.
+    msvc_vcvarsall: 'C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat'
+
+  tasks:
+
+    - name: Create organizer-only staging directory for the build pack
+      ansible.windows.win_file:
+        path: '{{ hunt_staging_dir }}'
+        state: directory
+
+    - name: Copy the Operation Shattered Beacon build pack to the staging directory
+      ansible.windows.win_copy:
+        src: "{{ hunt_pack_src }}/"
+        dest: '{{ hunt_staging_dir }}\'
+
+    - name: Add the hunt DNS anchor TXT record
+      ansible.windows.win_shell: |
+        & '{{ hunt_staging_dir }}\setup\Setup-Dns.ps1' -Domain '{{ hunt_domain }}'
+      register: hunt_dns_setup
+      changed_when: "'already exists' not in hunt_dns_setup.stdout"
+
+    - name: Check whether cl.exe (MSVC) is already on PATH
+      ansible.windows.win_shell: |
+        if (Get-Command cl.exe -ErrorAction SilentlyContinue) { 'present' } else { 'absent' }
+      register: hunt_cl_check
+      changed_when: false
+
+    - name: Compile all 21 checkpoints with Build.ps1
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = 'Stop'
+        if ('{{ hunt_cl_check.stdout | trim }}' -eq 'absent') {
+          cmd /c '"{{ msvc_vcvarsall }}" x64 && powershell -NoProfile -ExecutionPolicy Bypass -File "{{ hunt_staging_dir }}\Build.ps1" -DnsServer {{ hunt_dns_server }} -Domain "{{ hunt_domain }}"'
+          if ($LASTEXITCODE -ne 0) { throw "Build.ps1 failed (exit $LASTEXITCODE)" }
+        }
+        else {
+          & '{{ hunt_staging_dir }}\Build.ps1' -DnsServer {{ hunt_dns_server }} -Domain '{{ hunt_domain }}'
+        }
+      args:
+        chdir: '{{ hunt_staging_dir }}'
+      register: hunt_build
+
+    - name: Show build output
+      ansible.builtin.debug:
+        var: hunt_build.stdout_lines
+
+    - name: Archive each planet's compiled executables for transfer
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          $binRoot = '{{ hunt_staging_dir }}\bin'
+          Get-ChildItem -Path $binRoot -Directory | ForEach-Object {
+              $zip = Join-Path '{{ hunt_staging_dir }}' ($_.Name + '.zip')
+              if (Test-Path $zip) { Remove-Item $zip -Force }
+              Compress-Archive -Path (Join-Path $_.FullName '*') -DestinationPath $zip
+          }
+
+    - name: Fetch each planet's compiled-executable archive to the control node
+      ansible.builtin.fetch:
+        src: '{{ hunt_staging_dir }}\{{ item }}.zip'
+        dest: "{{ playbook_dir }}/scavengerhunt_build/{{ item }}.zip"
+        flat: true
+      loop:
+        - Coruscant
+        - Naboo
+        - Kamino
+        - Felucia
+        - Alderaan
+
+
+# PLAY: Prepare evidence fixtures and deploy checkpoint binaries on every planet
+- name: Prepare evidence fixtures and deploy checkpoint binaries
+  hosts: windows
+  vars:
+    hunt_domain: clone.wars
+    hunt_dns_server: "10.110.20.11"
+    hunt_planet_names:
+      windows-host-1: Coruscant
+      windows-host-2: Naboo
+      windows-host-3: Kamino
+      windows-host-4: Felucia
+      windows-host-5: Alderaan
+    hunt_setup_src: "{{ playbook_dir }}/scavengerhunt/Operation_Shattered_Beacon/setup"
+    hunt_staging_dir: 'C:\Republic\HuntBuild'
+    hunt_deploy_dir: 'C:\Republic\Hunt'
+
+  tasks:
+
+    - name: Verify this host has a scavenger-hunt planet mapping
+      ansible.builtin.assert:
+        that: inventory_hostname in hunt_planet_names
+        fail_msg: 'Add this host to hunt_planet_names before running the scavenger hunt deploy play.'
+
+    - name: Set this host's planet name
+      ansible.builtin.set_fact:
+        hunt_planet: "{{ hunt_planet_names[inventory_hostname] }}"
+
+    - name: Create organizer-only staging directory
+      ansible.windows.win_file:
+        path: '{{ hunt_staging_dir }}'
+        state: directory
+
+    - name: Copy this planet's Initialize script
+      ansible.windows.win_copy:
+        src: "{{ hunt_setup_src }}/Initialize-{{ hunt_planet }}.ps1"
+        dest: '{{ hunt_staging_dir }}\setup\Initialize-{{ hunt_planet }}.ps1'
+      when: hunt_planet != 'Coruscant'
+
+    - name: Copy this planet's checkpoint scripts
+      ansible.windows.win_copy:
+        src: "{{ hunt_setup_src }}/checkpoints/{{ hunt_planet }}/"
+        dest: '{{ hunt_staging_dir }}\setup\checkpoints\{{ hunt_planet }}\'
+      when: hunt_planet != 'Coruscant'
+
+    - name: Prepare Coruscant evidence fixtures (DNS-gated)
+      ansible.windows.win_shell: |
+        & '{{ hunt_staging_dir }}\setup\Initialize-Coruscant.ps1' -DnsServer {{ hunt_dns_server }} -Domain '{{ hunt_domain }}'
+      when: hunt_planet == 'Coruscant'
+      register: hunt_init_result
+
+    - name: Prepare this planet's evidence fixtures
+      ansible.windows.win_shell: |
+        & '{{ hunt_staging_dir }}\setup\Initialize-{{ hunt_planet }}.ps1'
+      when: hunt_planet != 'Coruscant'
+      register: hunt_init_result
+
+    - name: Show evidence-preparation output
+      ansible.builtin.debug:
+        var: hunt_init_result.stdout_lines
+
+    - name: Copy this planet's compiled-executable archive to the host
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/scavengerhunt_build/{{ hunt_planet }}.zip"
+        dest: '{{ hunt_staging_dir }}\{{ hunt_planet }}.zip'
+
+    - name: Create the player-facing hunt directory
+      ansible.windows.win_file:
+        path: '{{ hunt_deploy_dir }}'
+        state: directory
+
+    - name: Extract the compiled checkpoint executables into the player-facing directory
+      community.windows.win_unzip:
+        src: '{{ hunt_staging_dir }}\{{ hunt_planet }}.zip'
+        dest: '{{ hunt_deploy_dir }}'
+
+    - name: Confirm at least one checkpoint executable was deployed
+      ansible.windows.win_find:
+        paths: '{{ hunt_deploy_dir }}'
+        patterns: '*.exe'
+        recurse: true
+      register: hunt_deploy_check
+
+    - name: Record successful deployment for this planet
+      ansible.builtin.set_fact:
+        hunt_deploy_ok: "{{ hunt_deploy_check.matched > 0 }}"
+
+    - name: Fail loudly if no executables were deployed
+      ansible.builtin.assert:
+        that: hunt_deploy_ok
+        fail_msg: 'No checkpoint executables were found under {{ hunt_deploy_dir }} on {{ hunt_planet }} - deployment did not complete.'
+
+
+# PLAY: Once every planet is confirmed, erase the build evidence from Coruscant
+- name: Wipe Operation Shattered Beacon build evidence from Coruscant
+  hosts: windows-host-1
+  vars:
+    hunt_staging_dir: 'C:\Republic\HuntBuild'
+
+  tasks:
+
+    - name: Confirm every planet finished deployment before wiping Coruscant evidence
+      ansible.builtin.assert:
+        that: hostvars[item].hunt_deploy_ok | default(false)
+        fail_msg: "{{ item }} has not confirmed a successful hunt deployment yet - refusing to erase build evidence on Coruscant."
+      loop: "{{ groups['windows'] }}"
+
+    - name: Remove the build pack, source, organizer keys, and staged setup scripts from Coruscant
+      ansible.windows.win_file:
+        path: '{{ hunt_staging_dir }}'
+        state: absent
