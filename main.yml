@@ -1573,38 +1573,46 @@
         src: '{{ hunt_staging_dir }}\{{ hunt_planet }}.zip'
         dest: '{{ hunt_deploy_dir }}'
 
-    - name: Confirm at least one checkpoint executable was deployed
-      ansible.windows.win_find:
-        paths: '{{ hunt_deploy_dir }}'
-        patterns: '*.exe'
-        recurse: true
-      register: hunt_deploy_check
+    - name: Copy the team campaign layout
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/scavengerhunt/Operation_Shattered_Beacon/Campaign.json"
+        dest: '{{ hunt_staging_dir }}\Campaign.json'
+
+    - name: Copy the organizer manifest for deployment validation
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/scavengerhunt/Operation_Shattered_Beacon/organizer/manifest.json"
+        dest: '{{ hunt_staging_dir }}\deployment-manifest.json'
+
+    - name: Copy the hunt layout installer
+      ansible.windows.win_copy:
+        src: "{{ hunt_setup_src }}/Deploy-HuntLayout.ps1"
+        dest: '{{ hunt_staging_dir }}\setup\Deploy-HuntLayout.ps1'
+
+    - name: Relocate and verify this planet's terminals and evidence
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = 'Stop'
+        & '{{ hunt_staging_dir }}\setup\Deploy-HuntLayout.ps1' -Planet '{{ hunt_planet }}'
 
     - name: Record successful deployment for this planet
       ansible.builtin.set_fact:
-        hunt_deploy_ok: "{{ hunt_deploy_check.matched > 0 }}"
-
-    - name: Fail loudly if no executables were deployed
-      ansible.builtin.assert:
-        that: hunt_deploy_ok
-        fail_msg: 'No checkpoint executables were found under {{ hunt_deploy_dir }} on {{ hunt_planet }} - deployment did not complete.'
+        hunt_deploy_ok: true
 
 
-# PLAY: Once every planet is confirmed, erase the build evidence from Coruscant
-- name: Wipe Operation Shattered Beacon build evidence from Coruscant
-  hosts: windows-host-1
+# PLAY: Once every planet is confirmed, erase staged answers from every host
+- name: Wipe Operation Shattered Beacon build evidence from every planet
+  hosts: windows
   vars:
     hunt_staging_dir: 'C:\Republic\HuntBuild'
 
   tasks:
 
-    - name: Confirm every planet finished deployment before wiping Coruscant evidence
+    - name: Confirm every planet finished deployment before cleanup
       ansible.builtin.assert:
         that: hostvars[item].hunt_deploy_ok | default(false)
-        fail_msg: "{{ item }} has not confirmed a successful hunt deployment yet - refusing to erase build evidence on Coruscant."
+        fail_msg: "{{ item }} has not confirmed a successful hunt deployment yet - refusing to erase staged build evidence."
       loop: "{{ groups['windows'] }}"
 
-    - name: Remove the build pack, source, organizer keys, and staged setup scripts from Coruscant
+    - name: Remove the build pack, source, organizer keys, and staged setup scripts
       ansible.windows.win_file:
         path: '{{ hunt_staging_dir }}'
         state: absent

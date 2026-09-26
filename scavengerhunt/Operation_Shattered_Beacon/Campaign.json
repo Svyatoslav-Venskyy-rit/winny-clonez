@@ -1,0 +1,144 @@
+{
+  "red_early": [
+    "The balcony transmitter is ours. Recover the routing trail before the clones trace our forged evacuation order.",
+    "Medical logistics accepted our route. Follow the relay copy; a second voice may have compromised the deception.",
+    "A clone hid a warning outside the visible report. Recover his intercepted packet before it reaches command.",
+    "CT-6116 exposed the substitution. Preserve authentication half A: MERCY. His courier may lead us to the remaining fragments.",
+    "The courier escaped our departure trap. His supply dispatch is the next surviving trace of our forged orders.",
+    "The depot retained the shipment category. An escort registration may reveal how the courier bypassed our patrol.",
+    "The escort was never launched. Recover the scheduled flight record to reconstruct the escape route.",
+    "The launch record confirms the courier crossed our perimeter. Recover the weather word retained at the relay.",
+    "The relay identifies a surviving clone technician. Verify the owner of his original report; typed identities can be forged.",
+    "CT-6116 is Rook. His clearance trail may expose how our convincing substitute order entered the Republic chain."
+  ],
+  "late": [
+    {
+      "stage": 11,
+      "exe": "C:\\Users\\Public\\Documents\\Republic\\clearance.exe",
+      "moves": {
+        "Records\\clearance.txt": "C:\\ProgramData\\Republic\\Personnel\\clearance.txt"
+      },
+      "briefing": "The file calls itself forbidden; the access list tells a different story. Personnel records belong to the Republic application, shared by the machine rather than one user. Find its clearance record, inspect who can read it, and recover the brotherhood word. Keep an explanation of why the heading does not enforce access.",
+      "route": "Relay notation uses a half-turn alphabet: Nyqrenna|pyrnenapr.rkr. Among documents belonging to every local user, the Republic keeps a common reading desk.",
+      "blue": "Rook: \"A classification stamp is not authority. Dispatch accepted the countersign {key}; follow the launch record and prove which substitute it selected.\"",
+      "red": "B1 spy: \"Our clearance stamp fooled the clerks, not the access list. The dispatch clerk recorded {key} as the countersign. Recover the launch choice before the clones identify our substitute.\""
+    },
+    {
+      "stage": 12,
+      "exe": "C:\\Program Files\\Republic Dispatch\\pathfinder.exe",
+      "moves": {
+        "Vendor\\dispatch.exe": "C:\\Program Files\\Republic Dispatch\\Vendor\\dispatch.exe",
+        "Vendor\\dispatch-code.txt": "C:\\Program Files\\Republic Dispatch\\Vendor\\dispatch-code.txt",
+        "Trusted\\dispatch.exe": "C:\\Program Files\\Republic Dispatch\\Trusted\\dispatch.exe",
+        "Trusted\\dispatch-code.txt": "C:\\Program Files\\Republic Dispatch\\Trusted\\dispatch-code.txt"
+      },
+      "briefing": "The dispatcher kept a launch record with its machine-wide application data. Reconstruct its stated search order; this is an offline model, not the current shell PATH. The command is dispatch.exe and no candidate exists in the launch directory. Read the adjacent code of the first selected candidate without running it. Submit previous carry token, hyphen, four digits.",
+      "route": "The courier packed six-bit symbols into groups of four: Q29ydXNjYW50fHBhdGhmaW5kZXIuZXhl. Installed software has a home separate from its shared data. Look for the Republic dispatcher in that home.",
+      "blue": "Venn: \"The first candidate was the substitute. The recovery officer filed the wreck under countersign {key}. Its supposed photograph deserves a closer look.\"",
+      "red": "Tactical droid: \"Our substitute won the search order. The wreck recovery officer uses {key} as a countersign. Recover the disguised collection before Republic analysts open it.\""
+    },
+    {
+      "stage": 13,
+      "exe": "C:\\Users\\Public\\Pictures\\Republic\\camouflage.exe",
+      "moves": {
+        "Wreck\\sensor-image.jpg": "C:\\ProgramData\\Republic\\Recovery\\sensor-image.jpg"
+      },
+      "briefing": "The gallery is only the viewing station. The Republic recovery application kept the original sensor image with its machine-wide data. Its name promises a picture; its opening bytes disagree. Work on a copy, identify the container, and recover the salvage word inside.",
+      "route": "Read the relay inscription in a mirror: exe.egalfuomac|aiculeF. Every local user can share a picture. The Republic viewing station is in that communal gallery.",
+      "blue": "Recovery trooper: \"The image was a collection bundle. An analyst signed its transfer with {key}. Follow the captured connection and process records.\"",
+      "red": "B1 spy: \"The image disguise failed. The analyst used {key} when transferring our telemetry. Correlate the snapshots to recover the transmitter identifier.\""
+    },
+    {
+      "stage": 14,
+      "exe": "C:\\Windows\\Logs\\Republic\\heartbeat.exe",
+      "moves": {
+        "Wreck\\connections.csv": "C:\\ProgramData\\Republic\\Telemetry\\connections.csv",
+        "Wreck\\processes.csv": "C:\\ProgramData\\Republic\\Telemetry\\processes.csv"
+      },
+      "briefing": "The terminal lives where Windows keeps written traces; the Republic telemetry application keeps its captured tables with shared application data. Correlate the connection to 192.0.2.77:7443 with the process captured at the same instant. Submit that process command line's BeaconCode. Live processes are not the captured evidence.",
+      "route": "The terminal recorded ASCII as pairs of hexadecimal digits: 4E 61 62 6F 6F 7C 68 65 61 72 74 62 65 61 74 2E 65 78 65. Inside the operating system home, written traces accumulate. The Republic has its own log alcove.",
+      "blue": "Analyst: \"The transmitter preserved an encoded command. The analysis desk acknowledged it with {key}. Recover what it said without executing it.\"",
+      "red": "Tactical droid: \"Our transmitter exposed a preserved command. The analysis desk acknowledges transfers with {key}. Decode the record; executing it would add nothing to the reconstruction.\""
+    },
+    {
+      "stage": 15,
+      "exe": "C:\\ProgramData\\Republic\\Diagnostics\\coldmemory.exe",
+      "moves": {
+        "Wreck\\last-command.txt": "C:\\Windows\\Logs\\Republic\\last-command.txt"
+      },
+      "briefing": "The diagnostic terminal examines a preserved command, but the record stayed among the operating system's Republic logs. Recover the word inside the encoded PowerShell command without executing it. A byte order matters here: each ordinary letter occupied two bytes.",
+      "route": "The relay alphabet marched three letters too far; digits and punctuation stayed put: Doghuddq|frogphprub.hah. No user owns this application data. The Republic diagnostic desk lives in the machine-wide store.",
+      "blue": "Venn: \"The recovered unit name is one half of the next reconstruction. The salvage clerk whispered {key}. Search the wreck's retained configuration for the other half.\"",
+      "red": "B1 spy: \"That unit designation belongs to our wreck. The salvage clerk still accepts {key}. Recover the retained configuration bytes to reconstruct the missing fragment.\""
+    },
+    {
+      "stage": 16,
+      "exe": "C:\\Program Files\\Republic Recovery\\memorybank.exe",
+      "moves": {},
+      "briefing": "The recovery tool stored the droid memory in the machine-wide SOFTWARE hive under the Republic diagnostic branch. Find the binary fragment and interpret its bytes as text. Submit the previous carry token, a hyphen, and the recovered four digits.",
+      "route": "The courier packed six-bit symbols into groups of four: RmVsdWNpYXxtZW1vcnliYW5rLmV4ZQ==. Where installed tools keep their working bodies, find the Republic recovery workshop; its memory lives elsewhere.",
+      "blue": "Rook: \"Authentication half B is BEACON. The earlier half was sent first. The directory keeper accepts {key}; join the two halves and ask the naming service what anchors them.\"",
+      "red": "Tactical droid: \"Intercepted authentication half B: BEACON. Preserve the earlier half in transmission order. Our directory contact recognizes {key}; reconstruct the two-part phrase and recover its naming-service response.\""
+    },
+    {
+      "stage": 17,
+      "exe": "C:\\ProgramData\\Republic\\Directory\\twinvoice.exe",
+      "moves": {},
+      "briefing": "Two transmissions, first half then second, name a record. Join those words with a hyphen in lowercase. Under hunt in the Republic domain, ask the supplied DNS server for the text attached to that name. Submit joined-phrase, hyphen, TXT word. The evidence lives in DNS, not a local text file.",
+      "route": "Relay notation uses a half-turn alphabet: Pbehfpnag|gjvaibvpr.rkr. The capital's Republic directory application keeps its relay in shared machine data.",
+      "blue": "Directory relay: \"Two voices authenticate one warning. The order archivist recognizes {key}. Only one retained order matches the independently preserved digest.\"",
+      "red": "Tactical droid: \"The intercepted halves reconstruct the warning. The order archivist recognizes {key}. Identify the genuine order so we can reconstruct precisely what our forgery replaced.\""
+    },
+    {
+      "stage": 18,
+      "exe": "C:\\Users\\Public\\Documents\\Republic Orders\\checksum.exe",
+      "moves": {
+        "Orders\\amber.txt": "C:\\ProgramData\\Republic\\Orders\\amber.txt",
+        "Orders\\silver.txt": "C:\\ProgramData\\Republic\\Orders\\silver.txt",
+        "Orders\\copper.txt": "C:\\ProgramData\\Republic\\Orders\\copper.txt",
+        "Orders\\ivory.txt": "C:\\ProgramData\\Republic\\Orders\\ivory.txt"
+      },
+      "briefing": "The communal desk holds the verifier; the Republic order application keeps four originals with its shared machine data. Names and dates can lie. Compare SHA-256 digests against 26857272E7964FADE24DCC4851B6024EFC50B72E9BC60187CCA5E9530C2842BA and submit the matching RescueTarget in lowercase.",
+      "route": "Read the relay inscription in a mirror: exe.muskcehc|onimaK. A Republic Orders desk stands among documents shared by all local users.",
+      "blue": "Verified correction: \"Transport Seven carries Rook and the wounded. The archivist wrote {key} beside the authorization. Find the record that survives under two names.\"",
+      "red": "B1 spy: \"Transport Seven is the target our forged route was meant to distract. The archivist used {key} beside its authorization. Trace the record with two names to recover the remaining authentication evidence.\""
+    },
+    {
+      "stage": 19,
+      "exe": "C:\\ProgramData\\Republic\\Archive\\echo.exe",
+      "moves": {
+        "Archive\\routine.txt": "C:\\Users\\Public\\Documents\\Republic Archive\\routine.txt",
+        "Signals\\DAWN.txt": "C:\\ProgramData\\Republic\\Signals\\DAWN.txt"
+      },
+      "briefing": "The archive terminal keeps its routine record at the Republic Archive desk among everybody's documents. One NTFS record wears two names. It is neither a copy nor a shortcut. Find the other name and submit its filename stem in lowercase.",
+      "route": "The terminal recorded ASCII as pairs of hexadecimal digits: 41 6C 64 65 72 61 61 6E 7C 65 63 68 6F 2E 65 78 65. The Republic archive application keeps its terminal in machine-wide application data.",
+      "blue": "Archivist: \"The authorization survives. Circuit 66's engineer recorded {key} as the countersign. Establish the controller's actual identity before accepting its release.\"",
+      "red": "Tactical droid: \"The authorization survived under a second name. Circuit 66's engineer recorded {key}. Identify the principal our forged controller record tried to impersonate.\""
+    },
+    {
+      "stage": 20,
+      "exe": "C:\\Windows\\Tasks\\Republic\\system66.exe",
+      "moves": {
+        "Circuit\\controller.xml": "C:\\ProgramData\\Republic\\Scheduler\\controller.xml"
+      },
+      "briefing": "A scheduler keeps its controller export with Republic machine-wide application data. Inspect the principal rather than the display label. Translate its SID and submit only the lowercase account portion, without its authority prefix. The XML is evidence: do not register or run it.",
+      "route": "The relay alphabet marched three letters too far; digits and punctuation stayed put: Qderr|vbvwhp66.hah. In the operating system home, the old Tasks directory contains a Republic work shelf; this is not the live System32 task store.",
+      "blue": "Relay engineer: \"Verification receipt NOVA. Control recognized {key}. Reassemble the release packets in recorded order and expose the substituted evacuation message.\"",
+      "red": "B1 spy: \"Verification receipt NOVA. Control recognized {key}. Reassemble the release packets to recover the authentic-looking false message prepared for the front lines.\""
+    },
+    {
+      "stage": 21,
+      "exe": "C:\\Program Files\\Republic Control\\lastlight.exe",
+      "moves": {
+        "FinalPackets\\packet-d.txt": "C:\\ProgramData\\Republic\\Spool\\packet-d.txt",
+        "FinalPackets\\packet-a.txt": "C:\\ProgramData\\Republic\\Spool\\packet-a.txt",
+        "FinalPackets\\packet-c.txt": "C:\\ProgramData\\Republic\\Spool\\packet-c.txt",
+        "FinalPackets\\packet-b.txt": "C:\\ProgramData\\Republic\\Spool\\packet-b.txt"
+      },
+      "briefing": "The control application left four packet files in its machine-wide Republic spool. Filename order is a decoy. Read the oldest write in UTC first, then the next, retaining every digit. Submit the previous carry token, hyphen, and reconstructed four digits. This is an offline reconstruction; nothing is transmitted.",
+      "route": "The courier packed six-bit symbols into groups of four: QWxkZXJhYW58bGFzdGxpZ2h0LmV4ZQ==. The Republic control console lives with installed tools. Its outgoing fragments wait elsewhere.",
+      "blue": "Venn: \"The recovered forgery reads: CONVOY AUREK - BREAK ESCORT; DIVERT TRANSPORT SEVEN TO THE UNGUARDED APPROACH. Its convincing authentication was the trap. Rook's warning and the verified correction expose the substitution. Maintain escort formation. No brother left behind.\" OPERATION SHATTERED BEACON COMPLETE. Submit the final flag to Grey Team.",
+      "red": "Tactical droid: \"Message reconstruction complete: CONVOY AUREK - BREAK ESCORT; DIVERT TRANSPORT SEVEN TO THE UNGUARDED APPROACH. This authentic-looking forgery was prepared for delivery to the front lines to distract the clones and separate Transport Seven from its escort. The recovered fragments prove the deception's intended content. Archive the reconstruction; no live transmission is made.\" ROGER, ROGER. Submit the final flag to Grey Team."
+    }
+  ]
+}
