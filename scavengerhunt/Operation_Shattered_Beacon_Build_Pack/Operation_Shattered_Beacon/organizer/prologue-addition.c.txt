@@ -1,0 +1,4 @@
+/* Put these inside your existing successful-password branch. */
+puts("Next host: Coruscant");
+puts("Next terminal: C:\\Republic\\Hunt\\Balcony\\patio.exe");
+puts("Entry password: vanguard-k7m4p9");
