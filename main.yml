@@ -1122,65 +1122,59 @@
         enabled: true
         state: present
 
-    - name: Apply wallpaper inside logged-in desktop sessions
+    - name: Update the wallpaper image enforced by the existing policy
       become: true
       become_method: runas
       become_user: SYSTEM
       ansible.windows.win_powershell:
         error_action: stop
+        parameters:
+          Source: '{{ wallpaper_dir }}\{{ wallpaper_files[inventory_hostname] }}'
         script: |
-          $Ansible.Changed = $false
-          $name = 'Galactic Republic Wallpaper'
+          param([string]$Source)
+          $destination = 'C:\Windows\Web\Wallpaper\Cloud\Wallpaper.jpg'
+          $backup = 'C:\Windows\Web\Wallpaper\Cloud\Wallpaper.original.jpg'
+          $folder = Split-Path -Parent $destination
+          New-Item -Path $folder -ItemType Directory -Force | Out-Null
 
-          # Explorer identifies users who have a Windows desktop open.
-          $sessions = @(
-              Get-Process -Name explorer -ErrorAction SilentlyContinue |
-                  Where-Object { $_.SessionId -gt 0 } |
-                  Select-Object -ExpandProperty SessionId -Unique
-          )
-
-          if ($sessions.Count -eq 0) {
-              Write-Output 'No desktop session found. Wallpaper is configured to apply at the next sign-in.'
-              return
+          if ((Test-Path -LiteralPath $destination) -and
+              -not (Test-Path -LiteralPath $backup)) {
+              Copy-Item -LiteralPath $destination -Destination $backup
           }
 
-          $scheduler = New-Object -ComObject 'Schedule.Service'
-          $scheduler.Connect()
-          $task = $scheduler.GetFolder('\').GetTask($name)
-
-          foreach ($desktopSessionId in $sessions) {
-              $started = (Get-Date).AddSeconds(-2)
-
-              # 4 = TASK_RUN_USE_SESSION_ID.
-              # An empty username selects the user in that session.
-              $instance = $task.RunEx(
-                  $null, 4, [int]$desktopSessionId, $null
-              )
-
-              $completed = $false
-
-              for ($i = 0; $i -lt 20; $i++) {
-                  Start-Sleep -Seconds 2
-
-                  $info = Get-ScheduledTaskInfo -TaskName $name -TaskPath '\'
-                  $state = (Get-ScheduledTask -TaskName $name -TaskPath '\').State
-
-                  if ($info.LastRunTime -ge $started -and
-                      $state -eq 'Ready' -and
-                      $info.LastTaskResult -eq 0) {
-                      $completed = $true
-                      break
-                  }
-              }
-
-              if (-not $completed) {
-                  throw "Wallpaper task failed in desktop session $desktopSessionId. State=$state; Result=$($info.LastTaskResult). Check that user's %TEMP%\GalacticRepublicWallpaper.log."
-              }
-
-              $Ansible.Changed = $true
-              Write-Output "Wallpaper applied in desktop session $desktopSessionId."
+          Add-Type -AssemblyName System.Drawing
+          $image = [System.Drawing.Image]::FromFile($Source)
+          try {
+              $image.Save($destination, [System.Drawing.Imaging.ImageFormat]::Jpeg)
+          }
+          finally {
+              $image.Dispose()
           }
 
+          # Clear cached copies so Windows rebuilds them at the next sign-in.
+          $profiles = Get-CimInstance Win32_UserProfile |
+              Where-Object {
+                  $_.SID -like 'S-1-5-21-*' -and
+                  -not $_.Special -and
+                  (Test-Path -LiteralPath $_.LocalPath)
+              }
+
+          foreach ($profile in $profiles) {
+              $themes = Join-Path $profile.LocalPath 'AppData\Roaming\Microsoft\Windows\Themes'
+              $transcoded = Join-Path $themes 'TranscodedWallpaper'
+
+              if (Test-Path -LiteralPath $transcoded) {
+                  Remove-Item -LiteralPath $transcoded -Force
+              }
+
+              $cache = Join-Path $themes 'CachedFiles'
+              if (Test-Path -LiteralPath $cache) {
+                  Get-ChildItem -LiteralPath $cache -Filter 'CachedImage*' -File |
+                      Remove-Item -Force
+              }
+          }
+
+          Write-Output "Updated $destination. Sign out and sign back in to load the planet wallpaper."
     - name: Inspect wallpaper settings and execution logs
       tags:
         - wallpaper_diagnostics
