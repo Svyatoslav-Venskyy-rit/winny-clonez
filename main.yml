@@ -1072,75 +1072,75 @@
               throw 'Windows could not apply the desktop wallpaper.'
           }
 
-      - name: Remove the previous wallpaper startup entry
-        ansible.windows.win_regedit:
-          path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
-          name: GalacticRepublicWallpaper
-          state: absent
+    - name: Remove the previous wallpaper startup entry
+      ansible.windows.win_regedit:
+        path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+        name: GalacticRepublicWallpaper
+        state: absent
 
-      - name: Create wallpaper launcher with error logging
-        ansible.windows.win_copy:
-          dest: '{{ wallpaper_dir }}\Start-Wallpaper.ps1'
-          content: |
-            $ErrorActionPreference = 'Stop'
-            $log = Join-Path $env:TEMP 'GalacticRepublicWallpaper.log'
+    - name: Create wallpaper launcher with error logging
+      ansible.windows.win_copy:
+        dest: '{{ wallpaper_dir }}\Start-Wallpaper.ps1'
+        content: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:TEMP 'GalacticRepublicWallpaper.log'
 
-            try {
-                & (Join-Path $PSScriptRoot 'Set-Wallpaper.ps1')
-                "$(Get-Date -Format o): Wallpaper applied for $env:USERDOMAIN\$env:USERNAME" |
-                    Set-Content -LiteralPath $log
-                exit 0
-            }
-            catch {
-                $_ | Out-String | Set-Content -LiteralPath $log
-                exit 1
-            }
+          try {
+              & (Join-Path $PSScriptRoot 'Set-Wallpaper.ps1')
+              "$(Get-Date -Format o): Wallpaper applied for $env:USERDOMAIN\$env:USERNAME" |
+                  Set-Content -LiteralPath $log
+              exit 0
+          }
+          catch {
+              $_ | Out-String | Set-Content -LiteralPath $log
+              exit 1
+          }
 
-      - name: Configure wallpaper task for interactive users
-        community.windows.win_scheduled_task:
-          name: Galactic Republic Wallpaper
-          path: '\'
-          description: Apply this host's planet wallpaper at user sign-in.
-          group: 'S-1-5-4'
-          logon_type: group
-          run_level: limited
+    - name: Configure wallpaper task for interactive users
+      community.windows.win_scheduled_task:
+        name: Galactic Republic Wallpaper
+        path: '\'
+        description: Apply this host's planet wallpaper at user sign-in.
+        group: 'S-1-5-4'
+        logon_type: group
+        run_level: limited
 
-          actions:
-            - path: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
-              arguments: '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{{ wallpaper_dir }}\Start-Wallpaper.ps1"'
-              working_directory: '{{ wallpaper_dir }}'
+        actions:
+          - path: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+            arguments: '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{{ wallpaper_dir }}\Start-Wallpaper.ps1"'
+            working_directory: '{{ wallpaper_dir }}'
 
-          triggers:
-            - type: logon
-              delay: PT15S
+        triggers:
+          - type: logon
+            delay: PT15S
 
-          multiple_instances: 2
-          execution_time_limit: PT1M
-          disallow_start_if_on_batteries: false
-          stop_if_going_on_batteries: false
-          allow_demand_start: true
-          enabled: true
-          state: present
+        multiple_instances: 2
+        execution_time_limit: PT1M
+        disallow_start_if_on_batteries: false
+        stop_if_going_on_batteries: false
+        allow_demand_start: true
+        enabled: true
+        state: present
 
-      - name: Start wallpaper task and verify execution
-        ansible.windows.win_powershell:
-          error_action: stop
-          script: |
-            $name = 'Galactic Republic Wallpaper'
-            $started = (Get-Date).AddSeconds(-2)
-            Start-ScheduledTask -TaskName $name -TaskPath '\'
+    - name: Start wallpaper task and verify execution
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          $name = 'Galactic Republic Wallpaper'
+          $started = (Get-Date).AddSeconds(-2)
+          Start-ScheduledTask -TaskName $name -TaskPath '\'
 
-            for ($i = 0; $i -lt 15; $i++) {
-                Start-Sleep -Seconds 2
-                $task = Get-ScheduledTask -TaskName $name -TaskPath '\'
-                $info = Get-ScheduledTaskInfo -TaskName $name -TaskPath '\'
+          for ($i = 0; $i -lt 15; $i++) {
+              Start-Sleep -Seconds 2
+              $task = Get-ScheduledTask -TaskName $name -TaskPath '\'
+              $info = Get-ScheduledTaskInfo -TaskName $name -TaskPath '\'
 
-                if ($info.LastRunTime -ge $started -and
-                    $task.State -ne 'Running' -and
-                    $info.LastTaskResult -eq 0) {
-                    Write-Output 'Wallpaper script completed successfully.'
-                    return
-                }
+              if ($info.LastRunTime -ge $started -and
+                  $task.State -ne 'Running' -and
+                  $info.LastTaskResult -eq 0) {
+                  Write-Output 'Wallpaper script completed successfully.'
+                  return
               }
+            }
 
-              throw "Wallpaper task did not complete successfully. State=$($task.State); Result=$($info.LastTaskResult). Keep a desktop user signed in. Check %TEMP%\GalacticRepublicWallpaper.log in that user's session."
+            throw "Wallpaper task did not complete successfully. State=$($task.State); Result=$($info.LastTaskResult). Keep a desktop user signed in. Check %TEMP%\GalacticRepublicWallpaper.log in that user's session."
