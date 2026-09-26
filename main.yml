@@ -417,60 +417,6 @@
       microsoft.iis.website:
         name: "Tester Page"
         state: absent
-
-    # picking up the CA-issued cert instead of a hardcoded thumbprint ----
-    - name: Ensure a staging directory exists for the certificate
-      ansible.windows.win_file:
-        path: C:\Temp
-        state: directory
-
-    - name: Copy the CA-issued certificate from the control node
-      ansible.windows.win_copy:
-        src: "{{ playbook_dir }}/certs/iis_cert.pfx"
-        dest: C:\Temp\iis_cert.pfx
-
-    - name: Import the certificate for IIS to use
-      ansible.windows.win_certificate_store:
-        path: C:\Temp\iis_cert.pfx
-        password: "{{ pfx_export_password }}"
-        store_location: LocalMachine
-        key_storage: machine   # required so the IIS APPPOOL identity can read the private key
-        state: present
-      become: yes
-      become_method: runas
-      become_user: SYSTEM
-      register: iis_cert_import
-
-    - name: Select the imported HTTPS certificate with a private key
-      become: true
-      become_method: runas
-      become_user: SYSTEM
-      ansible.windows.win_powershell:
-        error_action: stop
-        parameters:
-          Thumbprints: "{{ iis_cert_import.thumbprints }}"
-        script: |
-          param([string[]]$Thumbprints)
-
-          $Ansible.Changed = $false
-
-          $imported = @(Get-ChildItem Cert:\LocalMachine\My |
-              Where-Object { $_.Thumbprint -in $Thumbprints })
-
-          $matches = @($imported | Where-Object {
-              $_.HasPrivateKey -and
-              ($_.EnhancedKeyUsageList.ObjectId -contains "1.3.6.1.5.5.7.3.1")
-          })
-
-          if ($matches.Count -ne 1) {
-              $details = $imported |
-                  Select-Object Subject, Thumbprint, HasPrivateKey, EnhancedKeyUsageList |
-                  Format-List | Out-String
-              throw "Expected one imported HTTPS certificate with a private key; found $($matches.Count). Certificates: $details"
-          }
-
-          $Ansible.Result = $matches[0].Thumbprint
-      register: iis_https_cert
     
     - name: add a webpage for iis
       become: true
@@ -486,11 +432,6 @@
             - protocol: http
               ip: "*"
               port: 80
-            - protocol: https
-              ip: "*"
-              port: 443
-              certificate_hash: "{{ iis_https_cert.result }}"
-
 
 # PLAY 5: SMB File Share
 - name: Install SMB service on Win Serv 2019
