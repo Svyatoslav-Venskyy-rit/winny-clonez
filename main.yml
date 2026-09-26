@@ -903,11 +903,31 @@
         type: dword
         state: present
  
-    - name: Exclude the C drive from any scanning that survives the above
-      ansible.windows.win_shell: |
-        Set-MpPreference -ExclusionPath C:\ -ErrorAction SilentlyContinue
-      changed_when: true
-      ignore_errors: yes
+    - name: Ensure C drive is excluded from Windows Defender scanning
+      ansible.windows.win_powershell:
+      script: |
+        $Ansible.Changed = $false
+
+        # Check whether Windows Defender PowerShell cmdlets exist
+        if (-not (Get-Command Get-MpPreference -ErrorAction SilentlyContinue)) {
+            Write-Output "Windows Defender cmdlets are not installed on this host. Nothing to configure."
+            return
+        }
+
+        # Get current Defender exclusions
+        $CurrentExclusions = (Get-MpPreference).ExclusionPath
+
+        # Check whether C:\ is already excluded
+        if ($CurrentExclusions -contains 'C:\') {
+            Write-Output "C:\ is already excluded from Windows Defender scanning."
+            return
+        }
+
+        # Add C:\ without overwriting any existing exclusions
+        Add-MpPreference -ExclusionPath 'C:\'
+
+        $Ansible.Changed = $true
+        Write-Output "Added C:\ to Windows Defender exclusions."
 
     - name: Uninstall the Windows Defender feature entirely
       ansible.windows.win_feature:
