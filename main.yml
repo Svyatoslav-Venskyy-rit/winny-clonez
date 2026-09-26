@@ -1233,26 +1233,79 @@
       register: hunt_dns_setup
       changed_when: "'already exists' not in hunt_dns_setup.stdout"
 
-    - name: Check whether cl.exe (MSVC) is already on PATH
-      ansible.windows.win_shell: |
-        if (Get-Command cl.exe -ErrorAction SilentlyContinue) { 'present' } else { 'absent' }
-      register: hunt_cl_check
-      changed_when: false
-
     - name: Compile all 21 checkpoints with Build.ps1
       ansible.windows.win_shell: |
         $ErrorActionPreference = 'Stop'
-        if ('{{ hunt_cl_check.stdout | trim }}' -eq 'absent') {
-          cmd /c '"{{ msvc_vcvarsall }}" x64 && powershell -NoProfile -ExecutionPolicy Bypass -File "{{ hunt_staging_dir }}\Build.ps1" -DnsServer {{ hunt_dns_server }} -Domain "{{ hunt_domain }}"'
-          if ($LASTEXITCODE -ne 0) { throw "Build.ps1 failed (exit $LASTEXITCODE)" }
+        $buildScript = '{{ hunt_staging_dir }}\Build.ps1'
+
+        if (-not (Test-Path -LiteralPath $buildScript)) {
+            throw "Build script missing: $buildScript"
+        }
+
+        if (Get-Command cl.exe -ErrorAction SilentlyContinue) {
+            & $buildScript -DnsServer '{{ hunt_dns_server }}' -Domain '{{ hunt_domain }}'
         }
         else {
-          & '{{ hunt_staging_dir }}\Build.ps1' -DnsServer {{ hunt_dns_server }} -Domain '{{ hunt_domain }}'
+            $vcvars = $null
+            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+
+            if (Test-Path -LiteralPath $vswhere) {
+                $installPath = & $vswhere -latest -products '*' `
+                    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                    -property installationPath
+
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Visual Studio discovery failed."
+                }
+
+                if ($installPath) {
+                    $installPath = ($installPath | Select-Object -First 1).Trim()
+                    $candidate = Join-Path $installPath 'VC\Auxiliary\Build\vcvarsall.bat'
+
+                    if (Test-Path -LiteralPath $candidate) {
+                        $vcvars = $candidate
+                    }
+                }
+            }
+
+            if (-not $vcvars) {
+                $fallback = '{{ msvc_vcvarsall }}'
+                if (Test-Path -LiteralPath $fallback) {
+                    $vcvars = $fallback
+                }
+            }
+
+            if (-not $vcvars) {
+                throw 'No MSVC C++ toolchain found on Coruscant. Install Visual Studio Build Tools with the Desktop development with C++ workload, then rerun.'
+            }
+
+            Write-Output "Using compiler environment: $vcvars"
+
+            $launcher = '{{ hunt_staging_dir }}\Run-HuntBuild.cmd'
+            $commands = @(
+                '@echo off'
+                ('call "{0}" x64' -f $vcvars)
+                'if errorlevel 1 exit /b %errorlevel%'
+                ('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{0}" -DnsServer "{1}" -Domain "{2}"' -f $buildScript, '{{ hunt_dns_server }}', '{{ hunt_domain }}')
+                'exit /b %errorlevel%'
+            )
+
+            Set-Content -LiteralPath $launcher -Value $commands -Encoding ASCII
+
+            try {
+                & $env:ComSpec /d /c .\Run-HuntBuild.cmd
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Hunt build failed with exit code $LASTEXITCODE."
+                }
+            }
+            finally {
+                Remove-Item -LiteralPath $launcher -Force -ErrorAction SilentlyContinue
+            }
         }
       args:
         chdir: '{{ hunt_staging_dir }}'
       register: hunt_build
-
+      
     - name: Show build output
       ansible.builtin.debug:
         var: hunt_build.stdout_lines
@@ -1324,6 +1377,11 @@
         src: "{{ hunt_setup_src }}/checkpoints/{{ hunt_planet }}/"
         dest: '{{ hunt_staging_dir }}\setup\checkpoints\{{ hunt_planet }}\'
       when: hunt_planet != 'Coruscant'
+
+    - name: Copy the shared hunt setup helper
+      ansible.windows.win_copy:
+        src: "{{ hunt_setup_src }}/Common.ps1"
+        dest: '{{ hunt_staging_dir }}\setup\Common.ps1'
 
     - name: Prepare Coruscant evidence fixtures (DNS-gated)
       ansible.windows.win_shell: |
