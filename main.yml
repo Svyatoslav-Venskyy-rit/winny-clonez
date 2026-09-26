@@ -1122,25 +1122,61 @@
         enabled: true
         state: present
 
-    - name: Start wallpaper task and verify execution
+    - name: Apply wallpaper inside logged-in desktop sessions
+      become: true
+      become_method: runas
+      become_user: SYSTEM
       ansible.windows.win_powershell:
         error_action: stop
         script: |
+          $Ansible.Changed = $false
           $name = 'Galactic Republic Wallpaper'
-          $started = (Get-Date).AddSeconds(-2)
-          Start-ScheduledTask -TaskName $name -TaskPath '\'
 
-          for ($i = 0; $i -lt 15; $i++) {
-              Start-Sleep -Seconds 2
-              $task = Get-ScheduledTask -TaskName $name -TaskPath '\'
-              $info = Get-ScheduledTaskInfo -TaskName $name -TaskPath '\'
+          # Explorer identifies users who have a Windows desktop open.
+          $sessions = @(
+              Get-Process -Name explorer -ErrorAction SilentlyContinue |
+                  Where-Object { $_.SessionId -gt 0 } |
+                  Select-Object -ExpandProperty SessionId -Unique
+          )
 
-              if ($info.LastRunTime -ge $started -and
-                  $task.State -ne 'Running' -and
-                  $info.LastTaskResult -eq 0) {
-                  Write-Output 'Wallpaper script completed successfully.'
-                  return
+          if ($sessions.Count -eq 0) {
+              Write-Output 'No desktop session found. Wallpaper is configured to apply at the next sign-in.'
+              return
+          }
+
+          $scheduler = New-Object -ComObject 'Schedule.Service'
+          $scheduler.Connect()
+          $task = $scheduler.GetFolder('\').GetTask($name)
+
+          foreach ($desktopSessionId in $sessions) {
+              $started = (Get-Date).AddSeconds(-2)
+
+              # 4 = TASK_RUN_USE_SESSION_ID.
+              # An empty username selects the user in that session.
+              $instance = $task.RunEx(
+                  $null, 4, [int]$desktopSessionId, $null
+              )
+
+              $completed = $false
+
+              for ($i = 0; $i -lt 20; $i++) {
+                  Start-Sleep -Seconds 2
+
+                  $info = Get-ScheduledTaskInfo -TaskName $name -TaskPath '\'
+                  $state = (Get-ScheduledTask -TaskName $name -TaskPath '\').State
+
+                  if ($info.LastRunTime -ge $started -and
+                      $state -eq 'Ready' -and
+                      $info.LastTaskResult -eq 0) {
+                      $completed = $true
+                      break
+                  }
               }
-            }
 
-            throw "Wallpaper task did not complete successfully. State=$($task.State); Result=$($info.LastTaskResult). Keep a desktop user signed in. Check %TEMP%\GalacticRepublicWallpaper.log in that user's session."
+              if (-not $completed) {
+                  throw "Wallpaper task failed in desktop session $desktopSessionId. State=$state; Result=$($info.LastTaskResult). Check that user's %TEMP%\GalacticRepublicWallpaper.log."
+              }
+
+              $Ansible.Changed = $true
+              Write-Output "Wallpaper applied in desktop session $desktopSessionId."
+          }
