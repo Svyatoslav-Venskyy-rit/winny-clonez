@@ -887,7 +887,7 @@
  
     # Password used for every account below, except the two Grey Team accounts.
     shared_account_password: "Followorders07"
-    grey_team_password: "Password123!"
+    grey_team_password: "wardontstop"
  
     # "admin: true" accounts are nested into the "Clone Admins" domain group
     # (created in Play 2, already nested inside Domain Admins).
