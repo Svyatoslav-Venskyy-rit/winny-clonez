@@ -148,49 +148,8 @@
     loop_control:
       label: "{{ item.name }} -> {{ item.ip }}"
 
-# PLAY 3A: Deploy notification files to all Windows hosts
-- name: Deploy Galactic Republic Notification Files
-  hosts: windows
-  vars:
-    republic_path: 'C:\Program Files\Galactic_Republic'
 
-  tasks:
-
-    - name: Create Galactic_Republic directory
-      ansible.windows.win_file:
-        path: "{{ republic_path }}"
-        state: directory
-
-    - name: Copy notification PowerShell script
-      ansible.windows.win_copy:
-        src: dc/notifications.ps1
-        dest: '{{ republic_path }}\notifications.ps1'
-
-    - name: Copy notification logo
-      ansible.windows.win_copy:
-        src: dc/logo.png
-        dest: '{{ republic_path }}\logo.png'
-
-
-# PLAY 3B: Create domain-wide notification GPO on Coruscant
-- name: Create Galactic Republic Notification GPO
-  hosts: windows-host-1
-  vars:
-    republic_path: 'C:\Program Files\Galactic_Republic'
-
-  tasks:
-
-    - name: Copy GPO creation PowerShell script
-      ansible.windows.win_copy:
-        src: dc/gpo_create.ps1
-        dest: '{{ republic_path }}\gpo_create.ps1'
-
-    - name: Run the GPO creation script
-      ansible.windows.win_command:
-        cmd: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\Galactic_Republic\gpo_create.ps1"
-
-
-# PLAY 4: Certification Authority
+# PLAY 3: Certification Authority
 - name: Deploy Competition CA
   hosts: windows-host-3
   vars:
@@ -352,7 +311,7 @@
         dest: "{{ playbook_dir }}/certs/archive/iis_cert_{{ inventory_hostname }}_{{ now(utc=true, fmt='%Y-%m-%d_%H-%M-%S-%f') }}Z.pfx"
         flat: true
 
-# PLAY 5: IIS Web Server
+# PLAY 4: IIS Web Server
 - name: Install and Configure IIS on Windows Server
   hosts: windows-host-2
   vars:
@@ -533,7 +492,7 @@
               certificate_hash: "{{ iis_https_cert.result }}"
 
 
-# PLAY 6: SMB File Share
+# PLAY 5: SMB File Share
 - name: Install SMB service on Win Serv 2019
   hosts: windows-host-4
   vars:
@@ -607,7 +566,7 @@
         dest: C:\shared_storage\message.txt
 
 
-# PLAY 7: MSSQL Express
+# PLAY 6: MSSQL Express
 - name: Deploy MSSQL Express on windows-host-5
   hosts: windows-host-5
   gather_facts: no
@@ -677,6 +636,59 @@
         action: allow
         state: present
         enabled: yes
+
+# PLAY 7A: Deploy notification files to all Windows hosts
+- name: Deploy Galactic Republic Notification Files
+  hosts: windows
+  vars:
+    republic_path: 'C:\Program Files\Galactic_Republic'
+
+  tasks:
+
+    - name: Create Galactic_Republic directory
+      ansible.windows.win_file:
+        path: "{{ republic_path }}"
+        state: directory
+
+    - name: Copy notification PowerShell script
+      ansible.windows.win_copy:
+        src: dc/notifications.ps1
+        dest: '{{ republic_path }}\notifications.ps1'
+
+    - name: Copy notification logo
+      ansible.windows.win_copy:
+        src: dc/logo.png
+        dest: '{{ republic_path }}\logo.png'
+
+
+# PLAY 7B: Create domain-wide notification GPO on Coruscant
+- name: Create Galactic Republic Notification GPO
+  hosts: windows-host-1
+  vars:
+    republic_path: 'C:\Program Files\Galactic_Republic'
+
+  tasks:
+
+    - name: Copy GPO creation PowerShell script
+      ansible.windows.win_copy:
+        src: dc/gpo_create.ps1
+        dest: '{{ republic_path }}\gpo_create.ps1'
+
+    - name: Run the GPO creation script
+      ansible.windows.win_command:
+        cmd: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\Galactic_Republic\gpo_create.ps1"
+
+# PLAY 7C: Apply Group Policy to every domain-joined Windows host
+- name: Force Group Policy update on all Windows hosts
+  hosts: windows
+  gather_facts: no
+
+  tasks:
+    - name: Run gpupdate
+      ansible.windows.win_command:
+        cmd: gpupdate.exe /force
+      changed_when: false
+
 
 # PLAY 8: Force Group Policy update on domain-joined Windows hosts
 - name: Update Group Policy on Domain Joined Windows Hosts
