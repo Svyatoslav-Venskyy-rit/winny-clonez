@@ -986,3 +986,96 @@
         msg: "Rebooting after removing Windows Defender"
         pre_reboot_delay: 15
       when: defender_feature.reboot_required
+
+# PLAY 12: Set each host's wallpaper for local and domain user sign-ins
+- name: Configure planet wallpapers on all Windows hosts
+  hosts: windows
+  gather_facts: false
+  tags:
+    - wallpapers
+
+  vars:
+    wallpaper_dir: 'C:\Program Files\Galactic_Republic\Wallpaper'
+    wallpaper_files:
+      windows-host-1: coruscant.png
+      windows-host-2: naboo.jpg
+      windows-host-3: kamino.jpg
+      windows-host-4: felucia.png
+      windows-host-5: alderaan.jpg
+
+  tasks:
+    - name: Verify this host has a wallpaper mapping
+      ansible.builtin.assert:
+        that: inventory_hostname in wallpaper_files
+        fail_msg: 'Add this host to wallpaper_files before running this play.'
+
+    - name: Create wallpaper directory
+      ansible.windows.win_file:
+        path: '{{ wallpaper_dir }}'
+        state: directory
+
+    - name: Copy the matching planet image
+      ansible.windows.win_copy:
+        src: '{{ playbook_dir }}/wallpapers/{{ wallpaper_files[inventory_hostname] }}'
+        dest: '{{ wallpaper_dir }}\{{ wallpaper_files[inventory_hostname] }}'
+      register: wallpaper_copy
+
+    - name: Check for the Windows bitmap
+      ansible.windows.win_stat:
+        path: '{{ wallpaper_dir }}\wallpaper.bmp'
+      register: wallpaper_bitmap
+
+    - name: Convert the planet image to a Windows bitmap
+      ansible.windows.win_powershell:
+        error_action: stop
+        parameters:
+          Source: '{{ wallpaper_dir }}\{{ wallpaper_files[inventory_hostname] }}'
+          Destination: '{{ wallpaper_dir }}\wallpaper.bmp'
+        script: |
+          param([string]$Source, [string]$Destination)
+          Add-Type -AssemblyName System.Drawing
+          $image = [System.Drawing.Image]::FromFile($Source)
+          try {
+              $image.Save($Destination, [System.Drawing.Imaging.ImageFormat]::Bmp)
+          }
+          finally {
+              $image.Dispose()
+          }
+      when: wallpaper_copy.changed or not wallpaper_bitmap.stat.exists
+
+    - name: Create the user sign-in wallpaper script
+      ansible.windows.win_copy:
+        dest: '{{ wallpaper_dir }}\Set-Wallpaper.ps1'
+        content: |
+          $ErrorActionPreference = 'Stop'
+          $wallpaper = Join-Path $PSScriptRoot 'wallpaper.bmp'
+          if (-not (Test-Path -LiteralPath $wallpaper)) {
+              throw "Wallpaper file is missing: $wallpaper"
+          }
+
+          # This script runs as the desktop user, including local Administrator.
+          $desktop = 'HKCU:\Control Panel\Desktop'
+          New-ItemProperty -Path $desktop -Name WallpaperStyle -Value '10' -PropertyType String -Force | Out-Null
+          New-ItemProperty -Path $desktop -Name TileWallpaper -Value '0' -PropertyType String -Force | Out-Null
+
+          Add-Type -TypeDefinition @'
+          using System.Runtime.InteropServices;
+          public static class RepublicWallpaper {
+              [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+              [return: MarshalAs(UnmanagedType.Bool)]
+              public static extern bool SystemParametersInfo(uint action, uint parameter, string value, uint flags);
+          }
+          '@
+
+          # SPI_SETDESKWALLPAPER; save the setting and broadcast the change.
+          if (-not [RepublicWallpaper]::SystemParametersInfo(20, 0, $wallpaper, 3)) {
+              throw 'Windows could not apply the desktop wallpaper.'
+          }
+
+    - name: Apply the wallpaper at every local or domain user sign-in
+      ansible.windows.win_regedit:
+        path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+        name: GalacticRepublicWallpaper
+        data: 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{{ wallpaper_dir }}\Set-Wallpaper.ps1"'
+        type: string
+        state: present
