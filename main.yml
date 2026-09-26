@@ -1213,7 +1213,7 @@
     hunt_staging_dir: 'C:\Republic\HuntBuild'
     # Only used as a fallback if cl.exe isn't already on PATH. Adjust to match
     # the actual Visual Studio Build Tools install on this host.
-    msvc_vcvarsall: 'C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat'
+    msvc_vcvarsall: 'C:\BuildTools\VC\Auxiliary\Build\vcvarsall.bat'
 
   tasks:
 
